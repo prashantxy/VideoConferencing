@@ -14,7 +14,7 @@ interface User {
 export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [name, setName] = useState<string>('');
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null); // Store the initial stream
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null); 
   const [localAudioTrack, setLocalAudioTrack] = useState<MediaStreamTrack | null>(null);
   const [localVideoTrack, setLocalVideoTrack] = useState<MediaStreamTrack | null>(null);
   const [joined, setJoined] = useState<boolean>(false);
@@ -23,7 +23,6 @@ export default function Dashboard() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const router = useRouter();
 
-  // Check authentication on mount
   useEffect(() => {
     const token = localStorage.getItem('token');
     const userData = localStorage.getItem('user');
@@ -45,7 +44,6 @@ export default function Dashboard() {
     }
   }, [router]);
 
-  // Initialize media stream on mount or user change
   useEffect(() => {
     if (!user) return;
 
@@ -79,7 +77,6 @@ export default function Dashboard() {
     };
   }, [user]);
 
-  // Toggle camera
   const toggleCamera = () => {
     if (!localStream || !localVideoTrack) return;
 
@@ -98,7 +95,6 @@ export default function Dashboard() {
     });
   };
 
-  // Toggle microphone
   const toggleMic = () => {
     if (!localStream || !localAudioTrack) return;
 
