@@ -11,7 +11,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: 'http://localhost:3001', 
+    origin: ["http://localhost:3001", "http://127.0.0.1:3001"], 
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -34,19 +34,12 @@ app.get('/', (req, res) => {
 const userManager = new UserManager();
 
 io.on('connection', (socket: Socket) => {
-  console.log('A user connected:', socket.id);
-
-  userManager.addUser(`user-${socket.id}`, socket);
-
-  socket.on('chat message', (msg) => {
-    console.log(`${socket.id}: ${msg}`);
-    io.emit('chat message', { from: socket.id, text: msg });
-  });
-
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+  console.log('a user connected');
+  userManager.addUser("randomName", socket);
+  socket.on("disconnect", () => {
+    console.log("user disconnected");
     userManager.removeUser(socket.id);
-  });
+  })
 });
 
 server.listen(3000, () => {
