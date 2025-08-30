@@ -2,7 +2,7 @@ import express from "express";
 import http from "http";
 import { Server, Socket } from "socket.io";
 import { UserManager } from "./managers/UserManager";
-import authRoutes from "./auth/auth";  
+import router from "./auth/auth";  
 
 const app = express();
 const server = http.createServer(app);
@@ -15,21 +15,21 @@ const io = new Server(server, {
 
 app.use(express.json());
 
-app.use("/auth", authRoutes);
+app.use("/auth", router);
 
 app.get("/", (req, res) => {
-  res.send("Server is running with Express + WebSockets");
+  res.send("Server is running with Express + WebSockets + WebRTC");
 });
 
 const userManager = new UserManager();
 
 io.on("connection", (socket: Socket) => {
-  console.log("🔗 A user connected:", socket.id);
+  console.log(" A user connected:", socket.id);
 
   userManager.addUser(`user-${socket.id}`, socket);
 
   socket.on("chat message", (msg) => {
-    console.log(`💬 ${socket.id}: ${msg}`);
+    console.log(` ${socket.id}: ${msg}`);
     io.emit("chat message", { from: socket.id, text: msg }); 
   });
 
