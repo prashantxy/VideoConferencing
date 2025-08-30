@@ -46,15 +46,25 @@ router.post('/signin', async (req, res) => {
   try {
     const { username, password } = req.body;
 
-    const user = await prisma.user.findUnique({ where: { username } });
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+    const user = await prisma.user.findUnique(
+      { where: { username } }
+    );
+    if (!user) return res.status(401).json(
+      { error: 'Invalid credentials' }
+    );
 
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '1h' });
+    const token = jwt.sign(
+      { userId: user.id },
+       JWT_SECRET,
+      { expiresIn: '1h' });
 
-    return res.json({ message: 'Signin successful', token });
+    return res.json(
+      { message: 'Signin successful', token }
+    );
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Something went wrong' });
