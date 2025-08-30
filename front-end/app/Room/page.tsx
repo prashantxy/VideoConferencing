@@ -5,7 +5,7 @@ import { io, Socket } from "socket.io-client";
 import { Camera, Mic, MicOff, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-const URL = "http://localhost:3000";
+const URL = process.env.NEXT_PUBLIC_API_URL;
 
 export default function Room() {
   const router = useRouter();
@@ -20,11 +20,9 @@ export default function Room() {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
-  // get user info
   const chatData = typeof window !== "undefined" ? localStorage.getItem("chatData") : null;
   const parsedData = chatData ? JSON.parse(chatData) : { name: "Guest" };
 
-  // init local stream
   useEffect(() => {
     const init = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -37,7 +35,6 @@ export default function Room() {
     init();
   }, []);
 
-  // socket setup
   useEffect(() => {
     if (!localStream) return;
 
@@ -135,7 +132,6 @@ export default function Room() {
     }
   };
 
-  // toggle mic
   const toggleMic = () => {
     if (!localStream) return;
     const audioTrack = localStream.getAudioTracks()[0];
@@ -145,7 +141,6 @@ export default function Room() {
     }
   };
 
-  // exit room
   const handleExit = () => {
     localStream?.getTracks().forEach((track) => track.stop());
     socket?.disconnect();
