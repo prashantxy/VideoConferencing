@@ -1,4 +1,3 @@
-
 import express from 'express';
 import http from 'http';
 import { Server, Socket } from 'socket.io';
@@ -8,6 +7,7 @@ import cors from 'cors';
 
 const app = express();
 const server = http.createServer(app);
+
 const allowedOrigins = [
   "http://localhost:3001",
   "https://video-conferencing-orpin-beta.vercel.app"
@@ -15,14 +15,20 @@ const allowedOrigins = [
 
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins, 
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true,
   },
 });
 
 app.use(cors({
-  origin: allowedOrigins, 
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("CORS not allowed"));
+    }
+  },
   methods: ['GET', 'POST'],
   credentials: true,
 }));
@@ -40,10 +46,11 @@ const userManager = new UserManager();
 io.on('connection', (socket: Socket) => {
   console.log('a user connected');
   userManager.addUser("randomName", socket);
+
   socket.on("disconnect", () => {
     console.log("user disconnected");
     userManager.removeUser(socket.id);
-  })
+  });
 });
 
 server.listen(3000, () => {
