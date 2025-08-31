@@ -45,13 +45,17 @@ const userManager = new UserManager();
 
 io.on('connection', (socket: Socket) => {
   console.log('a user connected');
-  userManager.addUser("randomName", socket);
+
+  socket.on("ready", (name: string) => {
+    userManager.addUser(name || "Guest", socket);
+  });
 
   socket.on("disconnect", () => {
     console.log("user disconnected");
     userManager.removeUser(socket.id);
   });
 });
+
 
 server.listen(3000, () => {
   console.log('Listening on http://localhost:3000');
