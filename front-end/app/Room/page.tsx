@@ -69,31 +69,34 @@ export default function Room() {
     });
 
     s.on("offer", async ({ roomId, sdp: remoteSdp }) => {
-      setLobby(false);
-      const pc = new RTCPeerConnection();
-      await pc.setRemoteDescription(remoteSdp);
+  setLobby(false);
+  const pc = new RTCPeerConnection();
 
-      const sdp = await pc.createAnswer();
-      await pc.setLocalDescription(sdp);
-      setReceivingPc(pc);
+  localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
 
-      const stream = new MediaStream();
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = stream;
-      }
+  await pc.setRemoteDescription(remoteSdp);
 
-      pc.ontrack = (e) => {
-        stream.addTrack(e.track);
-      };
+  const sdp = await pc.createAnswer();
+  await pc.setLocalDescription(sdp);
+  setReceivingPc(pc);
 
-      pc.onicecandidate = (e) => {
-        if (e.candidate) {
-          s.emit("add-ice-candidate", { candidate: e.candidate, type: "receiver", roomId });
-        }
-      };
+  const stream = new MediaStream();
+  if (remoteVideoRef.current) {
+    remoteVideoRef.current.srcObject = stream;
+  }
 
-      s.emit("answer", { roomId, sdp });
-    });
+  pc.ontrack = (e) => {
+    stream.addTrack(e.track);
+  };
+
+  pc.onicecandidate = (e) => {
+    if (e.candidate) {
+      s.emit("add-ice-candidate", { candidate: e.candidate, type: "receiver", roomId });
+    }
+  };
+
+  s.emit("answer", { roomId, sdp });
+});
 
     s.on("answer", ({ sdp: remoteSdp }) => {
       setLobby(false);
