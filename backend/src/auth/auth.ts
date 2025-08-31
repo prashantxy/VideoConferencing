@@ -13,9 +13,8 @@ app.use(express.json());
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
-// ================== Zod Schemas ==================
 const signupSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters long"),
+  name: z.string().min(7, "Name must be at least 7 characters long"),
   email: z.string().email("Invalid email format"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   username: z.string().min(3, "Username must be at least 3 characters"),
@@ -26,19 +25,17 @@ const signinSchema = z.object({
   password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
-// ================== Routes ==================
 router.post('/signup', async (req, res) => {
   try {
-    // validate with Zod
+   
     const parsedData = signupSchema.safeParse(req.body);
     if (!parsedData.success) {
       return res.status(400).json({
-        error: parsedData.error.issues.map((e: { message: any; }) => e.message),
+        error: parsedData.error.issues.map((e) => e.message),
       });
     }
     const { name, email, password, username } = parsedData.data;
 
-    // check if user already exists
     const existing = await prisma.user.findFirst({
       where: { OR: [{ email }, { username }] }
     });
@@ -47,7 +44,6 @@ router.post('/signup', async (req, res) => {
       return res.status(400).json({ error: 'User already exists' });
     }
 
-    // hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await prisma.user.create({
@@ -64,11 +60,11 @@ router.post('/signup', async (req, res) => {
 
 router.post('/signin', async (req, res) => {
   try {
-    // validate with Zod
+ 
     const parsedData = signinSchema.safeParse(req.body);
     if (!parsedData.success) {
       return res.status(400).json({
-        error: parsedData.error.issues.map((e: { message: any; }) => e.message),
+        error: parsedData.error.issues.map((e) => e.message),
       });
     }
     const { username, password } = parsedData.data;
