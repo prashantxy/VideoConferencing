@@ -35,12 +35,13 @@ export default function AuthPage() {
     setError('');
 
     try {
-      const endpoint = authMode === 'signin' ? '/signin' : '/signup';
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, ""); 
+     const endpoint = authMode === "signin" ? "/signin" : "/signup";
+     const response = await fetch(`${apiUrl}/auth${endpoint}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(formData),
+    });
 
       const data = await response.json();
 
