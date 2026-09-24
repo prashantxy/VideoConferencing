@@ -1,741 +1,551 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import { io, Socket } from "socket.io-client";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { io, Socket } from "socket.io-client";
+import {
+  ArrowLeft, MessageSquare, Mic, MicOff, RefreshCw, Send, SkipForward, Square, Video, VideoOff, Volume2, X,
+} from "lucide-react";
+import { Button, Logo } from "@/components/ui";
+import { API_URL, session, useOnlineCount } from "@/lib/api";
+import { mediaErrorText, useLocalMedia } from "@/lib/media";
 
-const URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+type Phase = "connecting" | "searching" | "matched" | "stopped";
+
+interface Message {
+  id: number;
+  from: "me" | "them" | "system";
+  text: string;
+}
+
+const iceServers: RTCIceServer[] = [
+  { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
+];
+// A TURN server is needed for users behind strict NATs; configure one via env.
+if (process.env.NEXT_PUBLIC_TURN_URL) {
+  iceServers.push({
+    urls: process.env.NEXT_PUBLIC_TURN_URL,
+    username: process.env.NEXT_PUBLIC_TURN_USERNAME,
+    credential: process.env.NEXT_PUBLIC_TURN_CREDENTIAL,
+  });
+}
+
+let messageId = 0;
+
+function formatClock(sec: number) {
+  const m = Math.floor(sec / 60).toString().padStart(2, "0");
+  const s = (sec % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
 
 export default function RoomPage() {
   const router = useRouter();
-  const [lobby, setLobby] = useState(true);
-  const [socket, setSocket] = useState<Socket | null>(null);
-  const [sendingPc, setSendingPc] = useState<RTCPeerConnection | null>(null);
-  const [receivingPc, setReceivingPc] = useState<RTCPeerConnection | null>(null);
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [cameraEnabled, setCameraEnabled] = useState(true);
-  const [micEnabled, setMicEnabled] = useState(true);
-  const [connectionState, setConnectionState] = useState<string>("initializing");
-  const [roomId, setRoomId] = useState<string>("");
-  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const polledOnline = useOnlineCount();
+  const [liveOnline, setLiveOnline] = useState<number | null>(null);
+  const online = liveOnline ?? polledOnline;
+  const [prefs] = useState(() => (typeof window === "undefined" ? null : session.chatPrefs()));
+  const media = useLocalMedia({ audio: prefs?.hasAudio ?? true, video: prefs?.hasVideo ?? true });
+
+  const [phase, setPhase] = useState<Phase>("connecting");
+  const [partner, setPartner] = useState<string | null>(null);
+  const [peerState, setPeerState] = useState<RTCPeerConnectionState>("new");
+  const [partnerMedia, setPartnerMedia] = useState({ audio: true, video: true });
+  const [partnerTyping, setPartnerTyping] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [draft, setDraft] = useState("");
+  const [chatOpen, setChatOpen] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [needsTap, setNeedsTap] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const socketRef = useRef<Socket | null>(null);
-  const isConnecting = useRef(false);
-  const senderCandidateQueue = useRef<RTCIceCandidate[]>([]);
-  const receiverCandidateQueue = useRef<RTCIceCandidate[]>([]);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const roomRef = useRef<string | null>(null);
+  const pendingIce = useRef<RTCIceCandidateInit[]>([]);
+  const stoppedRef = useRef(false);
+  const partnerRef = useRef<string | null>(null);
+  const leftNotice = useRef<string | null>(null);
+  const mediaStateRef = useRef({ audio: media.audioOn, video: media.videoOn });
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Debug logging function
-  const addDebugLog = useCallback((message: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    const logEntry = `[${timestamp}] ${message}`;
-    console.log(logEntry);
-    setDebugLogs(prev => [...prev.slice(-9), logEntry]); // Keep last 10 logs
+  const displayName = prefs?.name || session.user()?.name || "Guest";
+
+  // No session or no lobby prefs → go through the dashboard first.
+  useEffect(() => {
+    if (!session.token()) router.replace("/Authpage");
+    else if (!prefs) router.replace("/Dashboard");
+  }, [prefs, router]);
+
+  useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (localVideoRef.current) localVideoRef.current.srcObject = media.stream;
+  }, [media.stream, mounted]);
+
+  const addMessage = useCallback((from: Message["from"], text: string) => {
+    setMessages((m) => [...m, { id: ++messageId, from, text }]);
   }, []);
 
-  // Get user name from localStorage
-  const chatData = typeof window !== "undefined" ? localStorage.getItem("chatData") : null;
-  const parsedData = chatData ? JSON.parse(chatData) : { name: "Guest" };
-  const name = parsedData.name;
-
-  // Global error handling
+  // Signaling: one socket and at most one peer connection at a time.
   useEffect(() => {
-    const handleError = (error: ErrorEvent) => {
-      addDebugLog(`🚨 Global error: ${error.message}`);
-      console.error('🚨 Global error details:', error);
+    const stream = media.stream;
+    const token = session.token();
+    if (!stream || !token || !prefs) return;
+
+    const closePeer = () => {
+      pcRef.current?.close();
+      pcRef.current = null;
+      roomRef.current = null;
+      pendingIce.current = [];
+      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+      setPeerState("new");
+      setPartner(null);
+      setPartnerTyping(false);
+      setPartnerMedia({ audio: true, video: true });
     };
 
-    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-      addDebugLog(`🚨 Unhandled rejection: ${event.reason}`);
-      console.error('🚨 Unhandled promise rejection details:', event.reason);
-      event.preventDefault();
-    };
+    const createPeer = (roomId: string) => {
+      const pc = new RTCPeerConnection({ iceServers });
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-    window.addEventListener('error', handleError);
-    window.addEventListener('unhandledrejection', handleUnhandledRejection);
-
-    return () => {
-      window.removeEventListener('error', handleError);
-      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
-    };
-  }, [addDebugLog]);
-
-  // Initialize local media ONCE
-  useEffect(() => {
-    let mounted = true;
-    
-    const init = async () => {
-      try {
-        addDebugLog("Requesting media access...");
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { width: 640, height: 480 }, 
-          audio: true 
-        });
-        
-        if (!mounted) {
-          addDebugLog("Component unmounted, skipping stream setup");
-          return;
-        }
-        
-        setLocalStream(stream);
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-          await localVideoRef.current.play().catch((err) => {
-            addDebugLog(`⚠️ Local video play error: ${err.message}`);
-          });
-        }
-        addDebugLog("✅ Local stream initialized successfully");
-        setConnectionState("ready");
-      } catch (error) {
-        addDebugLog(`❌ Media access error: ${error}`);
-        setConnectionState("media_error");
-      }
-    };
-    
-    init();
-    
-    return () => {
-      mounted = false;
-    };
-  }, [addDebugLog]);
-
-  // Helper function to create peer connection with common configuration
-  const createPeerConnection = useCallback((type: "sender" | "receiver") => {
-    try {
-      addDebugLog(`📡 Creating ${type} peer connection`);
-      
-      const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
-          { urls: "stun:stun2.l.google.com:19302" }
-        ],
-        iceCandidatePoolSize: 10
-      });
-
-      // Add connection state monitoring
+      pc.ontrack = (e) => {
+        const video = remoteVideoRef.current;
+        if (!video || video.srcObject === e.streams[0]) return;
+        video.srcObject = e.streams[0];
+        video.play().then(() => setNeedsTap(false)).catch(() => setNeedsTap(true));
+      };
+      pc.onicecandidate = (e) => {
+        if (e.candidate) socket.emit("add-ice-candidate", { roomId, candidate: e.candidate.toJSON() });
+      };
       pc.onconnectionstatechange = () => {
-        addDebugLog(`📡 ${type} PC connection state: ${pc.connectionState}`);
-        if (pc.connectionState === "connected") {
-          setConnectionState("connected");
-        } else if (pc.connectionState === "failed") {
-          addDebugLog(`❌ ${type} connection failed, restarting ICE`);
-          setConnectionState("reconnecting");
-          pc.restartIce();
-        } else if (pc.connectionState === "disconnected") {
-          setConnectionState("disconnected");
-        }
+        if (pcRef.current === pc) setPeerState(pc.connectionState);
       };
 
-      pc.oniceconnectionstatechange = () => {
-        addDebugLog(`🧊 ${type} PC ICE state: ${pc.iceConnectionState}`);
-        if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
-          setConnectionState("connected");
-        } else if (pc.iceConnectionState === "failed") {
-          addDebugLog(`❌ ${type} ICE connection failed`);
-          setConnectionState("connection_failed");
-        }
-      };
-
-      pc.onsignalingstatechange = () => {
-        addDebugLog(`📋 ${type} PC signaling state: ${pc.signalingState}`);
-      };
-
-      pc.onicegatheringstatechange = () => {
-        addDebugLog(`🧊 ${type} PC ICE gathering state: ${pc.iceGatheringState}`);
-      };
-
-      // Add error handling
-     
-
-      // Add local tracks if available
-      if (localStream) {
-        try {
-          localStream.getTracks().forEach((track) => {
-            addDebugLog(`➕ Adding ${track.kind} track to ${type} PC`);
-            pc.addTrack(track, localStream);
-          });
-        } catch (error) {
-          addDebugLog(`❌ Error adding tracks to ${type} PC: ${error}`);
-          throw error; // Re-throw to prevent connection setup
-        }
-      } else {
-        addDebugLog(`⚠️ No local stream available when creating ${type} PC`);
-        throw new Error("No local stream available");
-      }
-
-      addDebugLog(`✅ ${type} PC created successfully`);
+      pcRef.current = pc;
       return pc;
-    } catch (error) {
-      addDebugLog(`❌ Failed to create ${type} PC: ${error}`);
-      throw error;
-    }
-  }, [localStream, addDebugLog]);
+    };
 
-  // Process queued ICE candidates
-  const processQueuedCandidates = useCallback(async (pc: RTCPeerConnection, queue: RTCIceCandidate[], type: string) => {
-    if (queue.length === 0) return;
-    
-    addDebugLog(`🔄 Processing ${queue.length} queued ICE candidates for ${type}`);
-    
-    for (const candidate of queue) {
-      try {
-        await pc.addIceCandidate(candidate);
-        addDebugLog(`✅ Added queued ICE candidate for ${type}`);
-      } catch (error) {
-        addDebugLog(`❌ Error adding queued ICE candidate for ${type}: ${error}`);
+    const flushIce = async (pc: RTCPeerConnection) => {
+      const queued = pendingIce.current;
+      pendingIce.current = [];
+      for (const c of queued) await pc.addIceCandidate(c).catch(() => {});
+    };
+
+    const socket = io(API_URL, { auth: { token }, transports: ["websocket"] });
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      if (!stoppedRef.current) socket.emit("ready", { name: displayName });
+    });
+
+    socket.on("connect_error", (err) => {
+      if (err.message === "unauthorized") {
+        session.clear();
+        router.replace("/Authpage");
       }
-    }
-    
-    // Clear the queue
-    queue.length = 0;
-    addDebugLog(`🧹 Cleared ${type} candidate queue`);
-  }, [addDebugLog]);
+    });
 
-  // Initialize socket connection ONCE when localStream is ready
+    socket.on("disconnect", () => {
+      closePeer();
+      if (!stoppedRef.current) setPhase("connecting");
+    });
+
+    socket.on("lobby", () => {
+      closePeer();
+      setPhase("searching");
+    });
+
+    socket.on("matched", ({ roomId, partner }: { roomId: string; partner: { name: string } }) => {
+      closePeer();
+      roomRef.current = roomId;
+      createPeer(roomId);
+      partnerRef.current = partner.name;
+      setPartner(partner.name);
+      setPhase("matched");
+      // Start a fresh transcript, but keep "X moved on" so an instant rematch isn't confusing.
+      const notice = leftNotice.current;
+      leftNotice.current = null;
+      setMessages([
+        ...(notice ? [{ id: ++messageId, from: "system" as const, text: notice }] : []),
+        { id: ++messageId, from: "system", text: `You're now talking to ${partner.name}. Say hi!` },
+      ]);
+      socket.emit("media-state", { roomId, ...mediaStateRef.current });
+    });
+
+    socket.on("send-offer", async ({ roomId }: { roomId: string }) => {
+      const pc = pcRef.current;
+      if (!pc || roomRef.current !== roomId) return;
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit("offer", { roomId, sdp: pc.localDescription });
+    });
+
+    socket.on("offer", async ({ roomId, sdp }: { roomId: string; sdp: RTCSessionDescriptionInit }) => {
+      const pc = pcRef.current;
+      if (!pc || roomRef.current !== roomId) return;
+      await pc.setRemoteDescription(sdp);
+      await flushIce(pc);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      socket.emit("answer", { roomId, sdp: pc.localDescription });
+    });
+
+    socket.on("answer", async ({ roomId, sdp }: { roomId: string; sdp: RTCSessionDescriptionInit }) => {
+      const pc = pcRef.current;
+      if (!pc || roomRef.current !== roomId || pc.signalingState !== "have-local-offer") return;
+      await pc.setRemoteDescription(sdp);
+      await flushIce(pc);
+    });
+
+    socket.on("add-ice-candidate", ({ roomId, candidate }: { roomId: string; candidate: RTCIceCandidateInit }) => {
+      const pc = pcRef.current;
+      if (!pc || roomRef.current !== roomId) return;
+      if (pc.remoteDescription) pc.addIceCandidate(candidate).catch(() => {});
+      else pendingIce.current.push(candidate);
+    });
+
+    socket.on("media-state", ({ audio, video }: { audio: boolean; video: boolean }) => {
+      setPartnerMedia({ audio, video });
+    });
+
+    socket.on("chat-message", ({ text }: { text: string }) => {
+      setPartnerTyping(false);
+      addMessage("them", text);
+    });
+
+    socket.on("typing", ({ typing }: { typing: boolean }) => setPartnerTyping(typing));
+
+    socket.on("online-count", (count: number) => setLiveOnline(count));
+
+    socket.on("partner-left", ({ reason }: { reason: string }) => {
+      const who = partnerRef.current ?? "Your partner";
+      leftNotice.current = reason === "skipped" ? `${who} moved on.` : `${who} left.`;
+      addMessage("system", leftNotice.current);
+      closePeer();
+    });
+
+    return () => {
+      socket.removeAllListeners();
+      socket.disconnect();
+      socketRef.current = null;
+      closePeer();
+    };
+     
+  }, [media.stream, prefs, router, addMessage]);
+
+  // Tell the partner when we mute or turn the camera off.
   useEffect(() => {
-    if (!localStream || socketRef.current || isConnecting.current) {
+    mediaStateRef.current = { audio: media.audioOn, video: media.videoOn };
+    if (roomRef.current) socketRef.current?.emit("media-state", { roomId: roomRef.current, ...mediaStateRef.current });
+  }, [media.audioOn, media.videoOn]);
+
+  // Call timer, counted from when media actually starts flowing.
+  useEffect(() => {
+    if (peerState !== "connected") {
+      setElapsed(0);
       return;
     }
+    const startedAt = Date.now();
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [peerState]);
 
-    isConnecting.current = true;
-    addDebugLog("🚀 Initializing socket connection...");
-    
-    const s = io(URL, { 
-      transports: ["websocket"],
-      forceNew: true,
-      timeout: 10000 // Add timeout
-    });
-    
-    socketRef.current = s;
-    setSocket(s);
-
-    s.on("connect", () => {
-      addDebugLog(`✅ Connected with socket id: ${s.id}`);
-      setConnectionState("waiting_for_partner");
-      
-      // Add error handling for the ready event
-      try {
-        s.emit("ready", name);
-        addDebugLog(`📢 Sent ready signal with name: ${name}`);
-      } catch (error) {
-        addDebugLog(`❌ Error sending ready signal: ${error}`);
-      }
-    });
-
-    s.on("connect_error", (error) => {
-      addDebugLog(`❌ Socket connection error: ${error}`);
-      setConnectionState("connection_error");
-    });
-
-    s.on("disconnect", (reason) => {
-      addDebugLog(`🔌 Socket disconnected. Reason: ${reason}`);
-      setConnectionState("disconnected");
-    });
-
-    s.on("lobby", () => {
-      addDebugLog("🏠 Moved back to lobby");
-      setLobby(true);
-      setConnectionState("waiting_for_partner");
-      setRoomId("");
-      
-      // Clear queues
-      senderCandidateQueue.current = [];
-      receiverCandidateQueue.current = [];
-      
-      // Clean up existing connections
-      if (sendingPc) {
-        addDebugLog("🧹 Closing sender PC");
-        sendingPc.close();
-        setSendingPc(null);
-      }
-      if (receivingPc) {
-        addDebugLog("🧹 Closing receiver PC");
-        receivingPc.close();
-        setReceivingPc(null);
-      }
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = null;
-      }
-    });
-
-    // CRITICAL: Wrap send-offer in try-catch to prevent crashes
-    s.on("send-offer", async ({ roomId: incomingRoomId }) => {
-      addDebugLog(`🚀 Received send-offer for room: ${incomingRoomId}`);
-      
-      try {
-        addDebugLog("🔄 Starting send-offer processing...");
-        
-        setLobby(false);
-        setRoomId(incomingRoomId);
-        setConnectionState("creating_offer");
-        
-        // Ensure we have local stream
-        if (!localStream) {
-          addDebugLog("❌ No local stream available for offer creation");
-          return;
-        }
-        
-        addDebugLog("✅ Local stream available, proceeding...");
-        
-        // Clean up any existing sending PC
-        if (sendingPc) {
-          addDebugLog("🧹 Cleaning up existing sender PC");
-          sendingPc.close();
-          setSendingPc(null);
-        }
-        
-        addDebugLog("📡 About to create new sender peer connection...");
-        
-        // Create peer connection with extra error handling
-        let pc: RTCPeerConnection;
-        try {
-          pc = createPeerConnection("sender");
-          addDebugLog("✅ Sender PC created successfully");
-        } catch (pcError) {
-          addDebugLog(`❌ Failed to create sender PC: ${pcError}`);
-          setConnectionState("pc_creation_error");
-          return;
-        }
-        
-        // Set up remote stream handling
-        const remoteStream = new MediaStream();
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = remoteStream;
-        }
-
-        pc.ontrack = (e) => {
-          addDebugLog(`📺 Received remote track on sender PC: ${e.track.kind}`);
-          e.streams[0].getTracks().forEach((track) => {
-            remoteStream.addTrack(track);
-          });
-          
-          // Auto-play remote video
-          setTimeout(() => {
-            if (remoteVideoRef.current) {
-              remoteVideoRef.current.play().catch((playError) => {
-                addDebugLog(`⚠️ Remote video play error: ${playError}`);
-              });
-            }
-          }, 100);
-        };
-
-        pc.onicecandidate = (e) => {
-          if (e.candidate) {
-            addDebugLog("📤 Sending ICE candidate (sender)");
-            try {
-              s.emit("add-ice-candidate", { 
-                candidate: e.candidate, 
-                type: "sender", 
-                roomId: incomingRoomId 
-              });
-            } catch (emitError) {
-              addDebugLog(`❌ Error emitting ICE candidate: ${emitError}`);
-            }
-          } else {
-            addDebugLog("🏁 ICE gathering complete for sender");
-          }
-        };
-
-        // Set the PC in state
-        setSendingPc(pc);
-        addDebugLog("✅ Sender PC set in state");
-
-        // Create offer with delay and extra error handling
-        addDebugLog("⏱️ Scheduling offer creation...");
-        setTimeout(async () => {
-          try {
-            addDebugLog("🤝 Creating offer...");
-            
-            const offer = await pc.createOffer({
-              offerToReceiveAudio: true,
-              offerToReceiveVideo: true
-            });
-            
-            addDebugLog("✅ Offer created, setting local description...");
-            await pc.setLocalDescription(offer);
-            addDebugLog("✅ Local description set");
-            
-            addDebugLog("📤 Emitting offer to server...");
-            s.emit("offer", { sdp: offer, roomId: incomingRoomId });
-            
-            setConnectionState("offer_sent");
-            addDebugLog("✅ Offer sent successfully!");
-            
-          } catch (offerError) {
-            addDebugLog(`❌ Error in offer creation process: ${offerError}`);
-            setConnectionState("offer_error");
-            console.error("Full offer error:", offerError);
-          }
-        }, 200);
-        
-        addDebugLog("✅ Send-offer handler completed without immediate errors");
-        
-      } catch (error) {
-        addDebugLog(`❌ Error in send-offer handler: ${error}`);
-        setConnectionState("send_offer_error");
-        console.error("Full send-offer error:", error);
-      }
-    });
-
-    s.on("offer", async ({ roomId: incomingRoomId, sdp: remoteSdp }) => {
-      addDebugLog(`📥 Received offer for room: ${incomingRoomId}`);
-      
-      try {
-        setLobby(false);
-        setRoomId(incomingRoomId);
-        setConnectionState("processing_offer");
-        
-        // Clean up any existing receiving PC
-        if (receivingPc) {
-          addDebugLog("🧹 Cleaning up existing receiver PC");
-          receivingPc.close();
-          setReceivingPc(null);
-        }
-        
-        const pc = createPeerConnection("receiver");
-        setReceivingPc(pc);
-
-        // Set up remote stream
-        const remoteStream = new MediaStream();
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = remoteStream;
-        }
-
-        pc.ontrack = (e) => {
-          addDebugLog(`📺 Received remote track: ${e.track.kind}`);
-          e.streams[0].getTracks().forEach((track) => {
-            remoteStream.addTrack(track);
-          });
-          
-          setTimeout(() => {
-            if (remoteVideoRef.current) {
-              remoteVideoRef.current.play().catch((playError) => {
-                addDebugLog(`⚠️ Remote video play error: ${playError}`);
-              });
-            }
-          }, 100);
-        };
-
-        pc.onicecandidate = (e) => {
-          if (e.candidate) {
-            addDebugLog("📤 Sending ICE candidate (receiver)");
-            s.emit("add-ice-candidate", { 
-              candidate: e.candidate, 
-              type: "receiver", 
-              roomId: incomingRoomId 
-            });
-          }
-        };
-
-        // Process the offer
-        await pc.setRemoteDescription(new RTCSessionDescription(remoteSdp));
-        addDebugLog("✅ Set remote description (offer)");
-
-        // Process any queued ICE candidates for receiver
-        await processQueuedCandidates(pc, senderCandidateQueue.current, "receiver");
-
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        addDebugLog("🤝 Created answer, sending to peer");
-
-        s.emit("answer", { roomId: incomingRoomId, sdp: answer });
-        setConnectionState("answer_sent");
-        
-      } catch (error) {
-        addDebugLog(`❌ Error handling offer: ${error}`);
-        setConnectionState("offer_processing_error");
-      }
-    });
-
-    s.on("answer", async ({ sdp: remoteSdp }) => {
-      addDebugLog("📥 Received answer");
-      setConnectionState("processing_answer");
-      
-      try {
-        if (sendingPc && sendingPc.signalingState === "have-local-offer") {
-          await sendingPc.setRemoteDescription(new RTCSessionDescription(remoteSdp));
-          addDebugLog("✅ Set remote description (answer)");
-          
-          // Process any queued ICE candidates for sender
-          await processQueuedCandidates(sendingPc, receiverCandidateQueue.current, "sender");
-          
-          setConnectionState("establishing");
-        } else {
-          addDebugLog(`⚠️ Cannot set answer - wrong signaling state: ${sendingPc?.signalingState}`);
-        }
-      } catch (error) {
-        addDebugLog(`❌ Error setting remote description: ${error}`);
-      }
-    });
-
-    s.on("add-ice-candidate", async ({ candidate, type }) => {
-      addDebugLog(`📥 Received ICE candidate, type: ${type}`);
-      
-      try {
-        const iceCandidate = new RTCIceCandidate(candidate);
-        
-        if (type === "sender" && receivingPc) {
-          if (receivingPc.remoteDescription && receivingPc.remoteDescription.type) {
-            await receivingPc.addIceCandidate(iceCandidate);
-            addDebugLog("✅ Added ICE candidate to receiving PC immediately");
-          } else {
-            addDebugLog("📋 Queueing ICE candidate for receiving PC");
-            senderCandidateQueue.current.push(iceCandidate);
-          }
-        } else if (type === "receiver" && sendingPc) {
-          if (sendingPc.remoteDescription && sendingPc.remoteDescription.type) {
-            await sendingPc.addIceCandidate(iceCandidate);
-            addDebugLog("✅ Added ICE candidate to sending PC immediately");
-          } else {
-            addDebugLog("📋 Queueing ICE candidate for sending PC");
-            receiverCandidateQueue.current.push(iceCandidate);
-          }
-        } else {
-          addDebugLog("⏳ Queueing ICE candidate - PC not ready yet");
-          if (type === "sender") {
-            senderCandidateQueue.current.push(iceCandidate);
-          } else {
-            receiverCandidateQueue.current.push(iceCandidate);
-          }
-        }
-      } catch (error) {
-        addDebugLog(`❌ Error handling ICE candidate: ${error}`);
-      }
-    });
-
-    return () => {
-      addDebugLog("🧹 Cleaning up socket connection");
-      isConnecting.current = false;
-      socketRef.current = null;
-      senderCandidateQueue.current = [];
-      receiverCandidateQueue.current = [];
-      s.disconnect();
-    };
-  }, [localStream, name, createPeerConnection, processQueuedCandidates, addDebugLog]);
-
-  // Cleanup on unmount
   useEffect(() => {
-    return () => {
-      addDebugLog("🧹 Component unmounting - cleaning up everything");
-      if (sendingPc) {
-        sendingPc.close();
-        setSendingPc(null);
-      }
-      if (receivingPc) {
-        receivingPc.close();
-        setReceivingPc(null);
-      }
-      localStream?.getTracks().forEach((track) => track.stop());
-      socketRef.current?.disconnect();
-      senderCandidateQueue.current = [];
-      receiverCandidateQueue.current = [];
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, partnerTyping]);
+
+  const next = useCallback(() => {
+    stoppedRef.current = false;
+    const socket = socketRef.current;
+    if (!socket?.connected) return;
+    leftNotice.current = null;
+    if (roomRef.current) socket.emit("next");
+    else socket.emit("ready", { name: displayName });
+    setPhase("searching");
+  }, [displayName]);
+
+  const stop = useCallback(() => {
+    stoppedRef.current = true;
+    socketRef.current?.emit("leave");
+    setPhase("stopped");
+    setPartner(null);
+    setPeerState("new");
+    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+    pcRef.current?.close();
+    pcRef.current = null;
+    roomRef.current = null;
+  }, []);
+
+  // Esc skips, M mutes, V toggles the camera, unless you're typing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = (e.target as HTMLElement)?.tagName === "INPUT";
+      if (e.key === "Escape") {
+        if (typing) (e.target as HTMLElement).blur();
+        else if (phase !== "connecting") next();
+      } else if (!typing && e.key.toLowerCase() === "m") media.toggleAudio();
+      else if (!typing && e.key.toLowerCase() === "v") media.toggleVideo();
     };
-  }, [sendingPc, receivingPc, localStream, addDebugLog]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [next, phase, media]);
 
-  const toggleCamera = useCallback(() => {
-    if (!localStream) return;
-    const videoTrack = localStream.getVideoTracks()[0];
-    if (videoTrack) {
-      videoTrack.enabled = !videoTrack.enabled;
-      setCameraEnabled(videoTrack.enabled);
-      addDebugLog(`📹 Camera toggled: ${videoTrack.enabled ? "ON" : "OFF"}`);
-    }
-  }, [localStream, addDebugLog]);
+  const sendMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    const text = draft.trim();
+    if (!text || !roomRef.current) return;
+    socketRef.current?.emit("chat-message", { roomId: roomRef.current, text });
+    socketRef.current?.emit("typing", { roomId: roomRef.current, typing: false });
+    addMessage("me", text);
+    setDraft("");
+  };
 
-  const toggleMic = useCallback(() => {
-    if (!localStream) return;
-    const audioTrack = localStream.getAudioTracks()[0];
-    if (audioTrack) {
-      audioTrack.enabled = !audioTrack.enabled;
-      setMicEnabled(audioTrack.enabled);
-      addDebugLog(`🎤 Microphone toggled: ${audioTrack.enabled ? "ON" : "OFF"}`);
-    }
-  }, [localStream, addDebugLog]);
+  const onDraftChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setDraft(e.target.value);
+    if (!roomRef.current) return;
+    socketRef.current?.emit("typing", { roomId: roomRef.current, typing: true });
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+    typingTimer.current = setTimeout(() => {
+      if (roomRef.current) socketRef.current?.emit("typing", { roomId: roomRef.current, typing: false });
+    }, 1500);
+  };
 
-  const handleExit = useCallback(() => {
-    addDebugLog("🚪 User exiting room");
-    
-    // Stop all tracks
-    localStream?.getTracks().forEach((track) => {
-      track.stop();
-      addDebugLog(`🛑 Stopped ${track.kind} track`);
-    });
-    
-    // Close peer connections
-    if (sendingPc) {
-      sendingPc.close();
-      setSendingPc(null);
-    }
-    if (receivingPc) {
-      receivingPc.close();
-      setReceivingPc(null);
-    }
-    
-    // Clear queues
-    senderCandidateQueue.current = [];
-    receiverCandidateQueue.current = [];
-    
-    // Disconnect socket
-    socketRef.current?.disconnect();
-    
-    router.push("/Dashboard");
-  }, [localStream, sendingPc, receivingPc, router, addDebugLog]);
+  const unmuteRemote = () => {
+    remoteVideoRef.current?.play().then(() => setNeedsTap(false)).catch(() => {});
+  };
 
-  // Skip partner function
-  const skipPartner = useCallback(() => {
-    if (socketRef.current) {
-      addDebugLog("⏭️ Skipping current partner");
-      
-      // Clean up current connections
-      if (sendingPc) {
-        sendingPc.close();
-        setSendingPc(null);
-      }
-      if (receivingPc) {
-        receivingPc.close();
-        setReceivingPc(null);
-      }
-      
-      // Clear remote video
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = null;
-      }
-      
-      // Clear queues
-      senderCandidateQueue.current = [];
-      receiverCandidateQueue.current = [];
-      
-      // Emit skip event
-      socketRef.current.emit("skip");
-      
-      setLobby(true);
-      setConnectionState("waiting_for_partner");
-      setRoomId("");
-    }
-  }, [sendingPc, receivingPc, addDebugLog]);
+  // Everything below depends on localStorage, so skip the server render.
+  if (!mounted) return null;
+
+  if (media.error) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-6 p-6 text-center">
+        <VideoOff className="h-10 w-10 text-danger" />
+        <h1 className="font-serif text-4xl">Camera unavailable</h1>
+        <p className="max-w-md text-muted">{mediaErrorText[media.error]}</p>
+        <div className="flex gap-3">
+          <Button onClick={media.retry}><RefreshCw className="h-4 w-4" /> Try again</Button>
+          <Button variant="ghost" onClick={() => router.push("/Dashboard")}>Back</Button>
+        </div>
+      </div>
+    );
+  }
+
+  const connected = phase === "matched" && peerState === "connected";
+  const statusText =
+    phase === "connecting" ? "Connecting" :
+    phase === "searching" ? "Searching" :
+    phase === "stopped" ? "Paused" :
+    peerState === "connected" ? "Live" :
+    peerState === "failed" ? "Connection failed" :
+    peerState === "disconnected" ? "Reconnecting" : "Connecting to peer";
 
   return (
-    <div className="min-h-screen bg-gray-900 p-6 flex flex-col items-center">
-      <div className="flex justify-between w-full max-w-4xl mb-4">
-        <div>
-          <h1 className="text-white text-2xl">Hi {name}</h1>
-          <div className="text-gray-400 text-sm">
-            <p>Connection: {connectionState}</p>
-            {roomId && <p>Room: {roomId}</p>}
-            {lobby ? <p>Status: Looking for partner...</p> : <p>Status: In call</p>}
-            <p>Socket: {socket?.id || "Not connected"}</p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          {!lobby && (
-            <button
-              onClick={skipPartner}
-              className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
-            >
-              Skip
-            </button>
-          )}
-          <button
-            onClick={handleExit}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-          >
-            Exit
+    <div className="flex h-dvh flex-col overflow-hidden bg-ink">
+      {/* Top bar */}
+      <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-line px-4 sm:px-6">
+        <div className="flex items-center gap-4">
+          <button onClick={() => router.push("/Dashboard")} aria-label="Back to dashboard" className="text-muted hover:text-cream">
+            <ArrowLeft className="h-5 w-5" />
           </button>
+          <span className="hidden sm:block"><Logo /></span>
         </div>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-6 w-full max-w-4xl">
-        {/* Local Video */}
-        <div className="relative bg-black rounded-xl overflow-hidden border border-white/20">
-          <video
-            ref={localVideoRef}
-            autoPlay
-            muted
-            playsInline
-            className="w-full aspect-video object-cover"
-          />
-          <div className="absolute bottom-4 left-4 flex gap-2">
-            <button
-              onClick={toggleMic}
-              className={`p-3 text-sm rounded-full text-white font-medium ${
-                micEnabled ? "bg-green-500 hover:bg-green-600" : "bg-red-500 hover:bg-red-600"
-              }`}
-            >
-              {micEnabled ? "🎤 ON" : "🔇 OFF"}
-            </button>
-            <button
-              onClick={toggleCamera}
-              className={`p-3 text-sm rounded-full text-white font-medium ${
-                cameraEnabled ? "bg-green-500 hover:bg-green-600" : "bg-red-500 hover:bg-red-600"
-              }`}
-            >
-              {cameraEnabled ? "📹 ON" : "📷 OFF"}
-            </button>
-          </div>
-          <div className="absolute top-4 left-4 text-white text-sm bg-black/70 px-3 py-1 rounded">
-            You ({name})
-          </div>
+        <div className="flex items-center gap-3">
+          <span className={`label inline-flex items-center gap-2 rounded-full border px-3 py-1.5 ${connected ? "border-signal/40 text-signal" : "border-line"}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-signal blink" : peerState === "failed" ? "bg-danger" : "bg-muted"}`} />
+            {statusText}
+            {connected && <span className="text-cream">{formatClock(elapsed)}</span>}
+          </span>
+          <span className="label hidden md:inline">{online ?? "–"} online</span>
         </div>
+      </header>
 
-        {/* Remote Video */}
-        <div className="relative bg-black rounded-xl overflow-hidden border border-white/20">
-          <video
-            ref={remoteVideoRef}
-            autoPlay
-            playsInline
-            className="w-full aspect-video object-cover"
-          />
-          {lobby ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-white/70 bg-black/50">
-              <div className="text-xl mb-3">🔍 Looking for someone...</div>
-              <div className="text-sm mb-2">Status: {connectionState}</div>
-              <div className="flex items-center space-x-1">
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+      <div className="flex min-h-0 flex-1">
+        {/* Stage */}
+        <main className="relative flex min-w-0 flex-1 flex-col">
+          <div className="relative m-3 flex-1 overflow-hidden rounded-3xl border border-line bg-ink-2 sm:m-4">
+            <video ref={remoteVideoRef} autoPlay playsInline className={`h-full w-full object-cover transition-opacity duration-500 ${connected && partnerMedia.video ? "opacity-100" : "opacity-0"}`} />
+
+            {/* Partner is here but their camera is off */}
+            {connected && !partnerMedia.video && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
+                <span className="flex h-32 w-32 items-center justify-center rounded-full bg-ink-3 font-serif text-6xl italic">
+                  {partner?.[0]?.toUpperCase()}
+                </span>
+                <span className="label">Camera off</span>
               </div>
+            )}
+
+            {/* Searching / connecting */}
+            {(phase === "searching" || phase === "connecting" || (phase === "matched" && !connected)) && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-8 p-6 text-center">
+                <div className="relative flex h-28 w-28 items-center justify-center">
+                  <span className="ring absolute inset-0 rounded-full border border-signal/70" />
+                  <span className="ring absolute inset-0 rounded-full border border-signal/70" style={{ animationDelay: "0.8s" }} />
+                  <span className="ring absolute inset-0 rounded-full border border-signal/70" style={{ animationDelay: "1.6s" }} />
+                  <span className="h-3 w-3 rounded-full bg-signal" />
+                </div>
+                <div>
+                  <h2 className="font-serif text-4xl sm:text-5xl">
+                    {phase === "connecting" && <>Getting <em className="text-signal">ready…</em></>}
+                    {phase === "searching" && <>Looking for <em className="text-signal">someone…</em></>}
+                    {phase === "matched" && peerState !== "failed" && <>Saying hi to <em className="text-signal">{partner}…</em></>}
+                    {phase === "matched" && peerState === "failed" && <>Couldn&apos;t reach <em className="text-signal">{partner}.</em></>}
+                  </h2>
+                  <p className="mt-3 text-sm text-muted">
+                    {phase === "matched" && peerState === "failed"
+                      ? "Their network may be blocking direct connections. Try someone else."
+                      : phase === "searching" && online !== null && online <= 1
+                        ? "It's quiet right now. Invite a friend, or hang tight."
+                        : "This usually takes a second or two."}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {phase === "stopped" && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 p-6 text-center">
+                <h2 className="font-serif text-5xl">Taking a <em className="text-signal">breather.</em></h2>
+                <p className="text-muted">You&apos;re out of the queue. Nobody can see you.</p>
+                <div className="flex gap-3">
+                  <Button size="lg" onClick={next}>Find someone</Button>
+                  <Button size="lg" variant="ghost" onClick={() => router.push("/Dashboard")}>Dashboard</Button>
+                </div>
+              </div>
+            )}
+
+            {/* Partner name tag */}
+            {phase === "matched" && partner && (
+              <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full bg-ink/70 px-4 py-2 backdrop-blur">
+                <span className="font-serif text-xl italic">{partner}</span>
+                {!partnerMedia.audio && <MicOff className="h-4 w-4 text-danger" aria-label="Partner is muted" />}
+              </div>
+            )}
+
+            {needsTap && connected && (
+              <button onClick={unmuteRemote} className="absolute right-4 top-4 flex items-center gap-2 rounded-full bg-signal px-4 py-2 text-sm font-medium text-ink">
+                <Volume2 className="h-4 w-4" /> Tap to hear
+              </button>
+            )}
+
+            {/* Self view */}
+            <div className="absolute bottom-4 right-4 aspect-[3/4] w-28 overflow-hidden rounded-2xl border border-line-strong bg-ink-3 shadow-2xl sm:w-40 md:aspect-video md:w-56">
+              <video ref={localVideoRef} autoPlay playsInline muted className={`mirror h-full w-full object-cover ${media.videoOn ? "" : "invisible"}`} />
+              {!media.videoOn && (
+                <div className="absolute inset-0 flex items-center justify-center font-serif text-3xl italic">
+                  {displayName[0]?.toUpperCase()}
+                </div>
+              )}
+              <span className="label absolute bottom-2 left-2 rounded-full bg-ink/70 px-2 py-0.5 text-[0.6rem]">You</span>
             </div>
-          ) : (
-            <>
-              <div className="absolute top-4 left-4 text-white text-sm bg-black/70 px-3 py-1 rounded">
-                Remote User
-              </div>
-              <div className="absolute top-4 right-4 text-white text-xs bg-green-500/80 px-2 py-1 rounded">
-                🟢 {connectionState === "connected" ? "Connected" : "Connecting..."}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
+          </div>
 
-      {/* Debug Panel - Shows recent logs and connection state */}
-      <div className="mt-4 p-4 bg-gray-800 rounded-lg text-xs text-gray-300 max-w-4xl w-full">
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div>
-            <h3 className="text-white font-semibold mb-2">Connection Status</h3>
-            <div>Sender PC: {sendingPc?.connectionState || "none"}</div>
-            <div>Receiver PC: {receivingPc?.connectionState || "none"}</div>
-            <div>Sender ICE: {sendingPc?.iceConnectionState || "none"}</div>
-            <div>Receiver ICE: {receivingPc?.iceConnectionState || "none"}</div>
+          {/* Controls */}
+          <div className="flex shrink-0 items-center justify-center gap-2 px-4 pb-4 sm:gap-3">
+            <IconToggle on={media.audioOn} onClick={media.toggleAudio} labelOn="Mute (M)" labelOff="Unmute (M)" iconOn={Mic} iconOff={MicOff} />
+            <IconToggle on={media.videoOn} onClick={media.toggleVideo} labelOn="Camera off (V)" labelOff="Camera on (V)" iconOn={Video} iconOff={VideoOff} />
+            <Button size="lg" onClick={next} disabled={phase === "connecting"} className="min-w-36">
+              <SkipForward className="h-5 w-5" /> {phase === "stopped" ? "Start" : "Next"}
+              <kbd className="ml-1 hidden rounded border border-ink/30 px-1.5 font-mono text-[0.65rem] sm:inline">Esc</kbd>
+            </Button>
+            {phase !== "stopped" && (
+              <button onClick={stop} aria-label="Stop" title="Stop" className="flex h-14 w-14 items-center justify-center rounded-full bg-danger/15 text-danger transition-colors hover:bg-danger hover:text-ink">
+                <Square className="h-5 w-5" fill="currentColor" />
+              </button>
+            )}
+            <button
+              onClick={() => setChatOpen(true)}
+              aria-label="Open chat"
+              className="relative flex h-14 w-14 items-center justify-center rounded-full border border-line-strong hover:border-cream lg:hidden"
+            >
+              <MessageSquare className="h-5 w-5" />
+              {messages.some((m) => m.from === "them") && <span className="absolute right-3 top-3 h-2 w-2 rounded-full bg-signal" />}
+            </button>
           </div>
-          <div>
-            <h3 className="text-white font-semibold mb-2">Queue Status</h3>
-            <div>Sender Queue: {senderCandidateQueue.current.length}</div>
-            <div>Receiver Queue: {receiverCandidateQueue.current.length}</div>
-            <div>Local Stream: {localStream ? "✅" : "❌"}</div>
-            <div>Socket Connected: {socket?.connected ? "✅" : "❌"}</div>
+        </main>
+
+        {/* Chat */}
+        <aside
+          className={`fixed inset-0 z-40 flex flex-col bg-ink transition-transform duration-300 lg:static lg:z-auto lg:w-[360px] lg:translate-x-0 lg:border-l lg:border-line ${chatOpen ? "translate-x-0" : "translate-x-full"}`}
+        >
+          <div className="flex h-14 shrink-0 items-center justify-between border-b border-line px-5">
+            <span className="label">Chat {partner && <>with <span className="text-cream">{partner}</span></>}</span>
+            <button onClick={() => setChatOpen(false)} aria-label="Close chat" className="text-muted hover:text-cream lg:hidden">
+              <X className="h-5 w-5" />
+            </button>
           </div>
-        </div>
-        
-        <h3 className="text-white font-semibold mb-2">Recent Debug Logs</h3>
-        <div className="space-y-1 max-h-40 overflow-y-auto">
-          {debugLogs.map((log, index) => (
-            <div key={index} className="font-mono">{log}</div>
-          ))}
-        </div>
+
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
+            {messages.length === 0 && (
+              <p className="pt-10 text-center font-serif text-2xl italic text-muted">Messages will show up here.</p>
+            )}
+            {messages.map((m) =>
+              m.from === "system" ? (
+                <p key={m.id} className="label py-2 text-center">{m.text}</p>
+              ) : (
+                <div key={m.id} className={`flex ${m.from === "me" ? "justify-end" : "justify-start"}`}>
+                  <p
+                    className={`max-w-[80%] whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                      m.from === "me" ? "rounded-br-md bg-signal text-ink" : "rounded-bl-md bg-ink-3 text-cream"
+                    }`}
+                  >
+                    {m.text}
+                  </p>
+                </div>
+              ),
+            )}
+            {partnerTyping && (
+              <p className="label blink">{partner} is typing…</p>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          <form onSubmit={sendMessage} className="flex shrink-0 gap-2 border-t border-line p-4">
+            <input
+              value={draft}
+              onChange={onDraftChange}
+              maxLength={500}
+              disabled={phase !== "matched"}
+              placeholder={phase === "matched" ? "Type a message…" : "Waiting for a partner…"}
+              aria-label="Message"
+              className="h-12 min-w-0 flex-1 rounded-full border border-line bg-ink-2 px-5 text-sm placeholder:text-muted/60 focus:border-signal focus:outline-none disabled:opacity-50"
+            />
+            <button
+              type="submit"
+              disabled={!draft.trim() || phase !== "matched"}
+              aria-label="Send"
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-signal text-ink transition-colors hover:bg-cream disabled:opacity-30"
+            >
+              <Send className="h-4 w-4" />
+            </button>
+          </form>
+        </aside>
       </div>
     </div>
+  );
+}
+
+function IconToggle({
+  on, onClick, labelOn, labelOff, iconOn: IconOn, iconOff: IconOff,
+}: {
+  on: boolean;
+  onClick: () => void;
+  labelOn: string;
+  labelOff: string;
+  iconOn: React.ElementType;
+  iconOff: React.ElementType;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={on ? labelOn : labelOff}
+      title={on ? labelOn : labelOff}
+      className={`flex h-14 w-14 items-center justify-center rounded-full transition-colors ${on ? "border border-line-strong hover:border-cream" : "bg-danger text-ink"}`}
+    >
+      {on ? <IconOn className="h-5 w-5" /> : <IconOff className="h-5 w-5" />}
+    </button>
   );
 }

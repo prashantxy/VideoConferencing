@@ -1,243 +1,203 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Video, Users, Globe, Zap, Camera, Mic, MicOff, LogOut } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { ArrowUpRight, LogOut, Mic, MicOff, RefreshCw, Video, VideoOff } from 'lucide-react';
+import { Button, Logo, OnlinePill } from '@/components/ui';
+import { api, formatDuration, session, useOnlineCount, useSession } from '@/lib/api';
+import { mediaErrorText, useLocalMedia } from '@/lib/media';
 
-interface User {
-  id?: string;
-  name: string;
-  username: string;
-  email?: string;
+interface Stats {
+  totalCalls: number;
+  totalSeconds: number;
+  longestSeconds: number;
+  recent: { id: string; partnerName: string; startedAt: string; durationSec: number }[];
+}
+
+function timeAgo(iso: string) {
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 5 ? 'Up late' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
 }
 
 export default function Dashboard() {
-  const [user, setUser] = useState<User | null>(null);
-  const [name, setName] = useState<string>('');
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null); 
-  const [localAudioTrack, setLocalAudioTrack] = useState<MediaStreamTrack | null>(null);
-  const [localVideoTrack, setLocalVideoTrack] = useState<MediaStreamTrack | null>(null);
-  const [joined, setJoined] = useState<boolean>(false);
-  const [cameraEnabled, setCameraEnabled] = useState<boolean>(true);
-  const [micEnabled, setMicEnabled] = useState<boolean>(true);
-  const videoRef = useRef<HTMLVideoElement>(null);
   const router = useRouter();
+  const { user, logout } = useSession();
+  const online = useOnlineCount();
+  const prefs = typeof window !== 'undefined' ? session.chatPrefs() : null;
+  const media = useLocalMedia({ audio: prefs?.hasAudio ?? true, video: prefs?.hasVideo ?? true });
+  const [name, setName] = useState('');
+  const [stats, setStats] = useState<Stats | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    const userData = localStorage.getItem('user');
-
-    if (!token || !userData) {
-      router.push('/Authpage');
-      return;
-    }
-
-    try {
-      const parsedUser = JSON.parse(userData);
-      setUser(parsedUser);
-      setName(parsedUser.name || parsedUser.username);
-    } catch (error) {
-      console.error('Error parsing user data:', error);
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      router.push('/Authpage');
-    }
-  }, [router]);
+    if (user && !name) setName(prefs?.name || user.name.split(' ')[0]);
+     
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
-
-    const setupMedia = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true,
-        });
-        setLocalStream(stream);
-        const audioTrack = stream.getAudioTracks()[0];
-        const videoTrack = stream.getVideoTracks()[0];
-        setLocalAudioTrack(audioTrack);
-        setLocalVideoTrack(videoTrack);
-
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(console.error);
-        }
-      } catch (error) {
-        console.error('Error accessing media devices:', error);
-      }
-    };
-
-    setupMedia();
-
-    return () => {
-      localAudioTrack?.stop();
-      localVideoTrack?.stop();
-      localStream?.getTracks().forEach((track) => track.stop());
-    };
+    api<Stats>('/users/me/stats').then(setStats).catch(() => {});
   }, [user]);
 
-  const toggleCamera = () => {
-    if (!localStream || !localVideoTrack) return;
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.srcObject = media.stream;
+  }, [media.stream]);
 
-    setCameraEnabled((prev) => {
-      const newEnabled = !prev;
-      if (localVideoTrack.enabled !== newEnabled) {
-        localVideoTrack.enabled = newEnabled;
-        if (videoRef.current && localStream) {
-          videoRef.current.srcObject = new MediaStream(
-            localStream.getTracks().filter((track) => track.enabled)
-          );
-          videoRef.current.play().catch(console.error);
-        }
-      }
-      return newEnabled;
-    });
-  };
-
-  const toggleMic = () => {
-    if (!localStream || !localAudioTrack) return;
-
-    setMicEnabled((prev) => {
-      const newEnabled = !prev;
-      if (localAudioTrack.enabled !== newEnabled) {
-        localAudioTrack.enabled = newEnabled;
-        if (videoRef.current && localStream) {
-          videoRef.current.srcObject = new MediaStream(
-            localStream.getTracks().filter((track) => track.enabled)
-          );
-          videoRef.current.play().catch(console.error);
-        }
-      }
-      return newEnabled;
-    });
-  };
-
-  const handleLogout = (): void => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    router.push('/');
-  };
-
-  const handleStartChat = (): void => {
-    if (name.trim()) {
-      
-      localStorage.setItem('chatData', JSON.stringify({
-        name: name.trim(),
-        hasAudio: micEnabled,
-        hasVideo: cameraEnabled,
-      }));
-      router.push('/Room');
-    }
+  const start = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    session.saveChatPrefs({ name: name.trim(), hasAudio: media.audioOn, hasVideo: media.videoOn });
+    router.push('/Room');
   };
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
-        <div className="text-white text-xl">Loading...</div>
+      <div className="flex min-h-screen items-center justify-center">
+        <span className="label blink">Loading…</span>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-6">
-      <div className="max-w-4xl mx-auto">
-        {/* Header with user info and logout */}
-        <div className="flex justify-between items-center mb-12">
-          <div>
-            <h1 className="text-5xl font-bold text-white mb-2">
-              Hey there, <span className="text-purple-300">{user.name}</span>! 👋
-            </h1>
-            <p className="text-xl text-blue-200">Ready to meet someone awesome?</p>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg transition-colors border border-red-500/30"
-          >
-            <LogOut className="w-4 h-4" />
-            Logout
-          </button>
+    <div className="min-h-screen">
+      <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
+        <Logo />
+        <div className="flex items-center gap-3">
+          <span className="hidden sm:inline-flex"><OnlinePill count={online} /></span>
+          <Button variant="ghost" onClick={logout} aria-label="Log out">
+            <LogOut className="h-4 w-4" /> <span className="hidden sm:inline">Log out</span>
+          </Button>
         </div>
+      </header>
 
-        {/* Video Preview Card */}
-        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-8 mb-8 border border-white/20 shadow-2xl">
-          <h2 className="text-2xl font-bold text-white mb-6 text-center">Setup Your Camera</h2>
+      <main className="mx-auto max-w-6xl px-6 pb-20">
+        <section className="rise pb-10 pt-8">
+          <p className="label">@{user.username}</p>
+          <h1 className="mt-3 font-serif text-5xl md:text-7xl">
+            {greeting()}, <em className="text-signal">{user.name.split(' ')[0]}.</em>
+          </h1>
+        </section>
 
-          <div className="grid md:grid-cols-2 gap-8 items-center">
-            <div className="relative">
-              <video
-                ref={videoRef}
-                autoPlay
-                muted
-                className="w-full aspect-video bg-gray-800 rounded-lg shadow-lg border-2 border-purple-500/30"
-              />
-              <div className="absolute bottom-4 left-4 flex gap-2">
-                <button
-                  onClick={toggleMic}
-                  className={`p-3 rounded-full transition-all ${micEnabled ? 'bg-green-500/80 hover:bg-green-500' : 'bg-red-500/80 hover:bg-red-500'}`}
-                >
-                  {micEnabled ? <Mic className="w-5 h-5 text-white" /> : <MicOff className="w-5 h-5 text-white" />}
-                </button>
-                <button
-                  onClick={toggleCamera}
-                  className={`p-3 rounded-full transition-all ${cameraEnabled ? 'bg-green-500/80 hover:bg-green-500' : 'bg-red-500/80 hover:bg-red-500'}`}
-                >
-                  <Camera className="w-5 h-5 text-white" />
-                </button>
+        <section className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
+          {/* Camera preview */}
+          <div className="relative aspect-video overflow-hidden rounded-3xl border border-line bg-ink-2">
+            <video ref={videoRef} autoPlay playsInline muted className={`mirror h-full w-full object-cover transition-opacity ${media.videoOn && media.stream ? 'opacity-100' : 'opacity-0'}`} />
+
+            {!media.stream && !media.error && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="label blink">Waking up your camera…</span>
               </div>
-            </div>
-
-            <div className="space-y-6">
-              <div>
-                <label className="block text-white font-semibold mb-2">Display Name</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
-                  placeholder="Enter your name for the chat"
-                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                />
+            )}
+            {media.error && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center">
+                <VideoOff className="h-8 w-8 text-danger" />
+                <p className="max-w-sm text-sm text-muted">{mediaErrorText[media.error]}</p>
+                <Button variant="ghost" onClick={media.retry}><RefreshCw className="h-4 w-4" /> Try again</Button>
               </div>
+            )}
+            {media.stream && !media.videoOn && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="flex h-24 w-24 items-center justify-center rounded-full bg-ink-3 font-serif text-5xl italic">
+                  {(name || user.name)[0]?.toUpperCase()}
+                </span>
+              </div>
+            )}
 
+            <div className="absolute left-4 top-4 label rounded-full bg-ink/70 px-3 py-1.5 backdrop-blur">Preview</div>
+            <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-2">
               <button
-                onClick={handleStartChat}
-                disabled={!name.trim()}
-                className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-all transform hover:scale-105 shadow-lg"
+                onClick={media.toggleAudio}
+                disabled={!media.stream}
+                aria-label={media.audioOn ? 'Mute microphone' : 'Unmute microphone'}
+                className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors disabled:opacity-40 ${media.audioOn ? 'bg-ink/70 hover:bg-ink-3' : 'bg-danger text-ink'}`}
               >
-                <div className="flex items-center justify-center gap-2">
-                  <Video className="w-5 h-5" />
-                  Start Video Chat
-                </div>
+                {media.audioOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
               </button>
-
-              <div className="text-center">
-                <p className="text-white/70 text-sm">
-                  🎭 Meet random strangers • 🌍 Global connections • ⚡ Instant matching
-                </p>
-              </div>
+              <button
+                onClick={media.toggleVideo}
+                disabled={!media.stream}
+                aria-label={media.videoOn ? 'Turn camera off' : 'Turn camera on'}
+                className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors disabled:opacity-40 ${media.videoOn ? 'bg-ink/70 hover:bg-ink-3' : 'bg-danger text-ink'}`}
+              >
+                {media.videoOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+              </button>
             </div>
           </div>
-        </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-6">
-          <div className="text-center bg-white/5 rounded-lg p-4 border border-white/10">
-            <Users className="w-8 h-8 text-purple-400 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-white">1.2M+</p>
-            <p className="text-white/70">Active Users</p>
+          {/* Start panel */}
+          <form onSubmit={start} className="flex flex-col justify-between gap-8 rounded-3xl border border-line bg-ink-2 p-8">
+            <div>
+              <p className="label">Ready when you are</p>
+              <h2 className="mt-3 font-serif text-4xl">Who&apos;s calling?</h2>
+              <p className="mt-2 text-sm text-muted">This is the only thing your partner will know about you.</p>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={40}
+                placeholder="Your display name"
+                aria-label="Display name"
+                className="mt-6 w-full border-b border-line-strong bg-transparent pb-3 font-serif text-3xl italic text-cream placeholder:text-muted/50 focus:border-signal focus:outline-none"
+              />
+            </div>
+            <div>
+              <Button type="submit" size="lg" disabled={!name.trim() || !media.stream} className="w-full">
+                Find someone <ArrowUpRight className="h-5 w-5" />
+              </Button>
+              <p className="label mt-4 text-center">
+                {online !== null && online > 0 ? `${online} ${online === 1 ? 'person' : 'people'} connected` : 'Be the first one in'}
+              </p>
+            </div>
+          </form>
+        </section>
+
+        {/* History */}
+        <section className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.5fr]">
+          <div className="grid grid-cols-3 gap-px overflow-hidden rounded-3xl border border-line bg-line lg:grid-cols-1">
+            {[
+              { k: 'Conversations', v: stats ? String(stats.totalCalls) : '–' },
+              { k: 'Time talking', v: stats ? formatDuration(stats.totalSeconds) : '–' },
+              { k: 'Longest chat', v: stats ? formatDuration(stats.longestSeconds) : '–' },
+            ].map(({ k, v }) => (
+              <div key={k} className="bg-ink-2 p-6">
+                <p className="label">{k}</p>
+                <p className="mt-2 font-serif text-4xl">{v}</p>
+              </div>
+            ))}
           </div>
-          <div className="text-center bg-white/5 rounded-lg p-4 border border-white/10">
-            <Globe className="w-8 h-8 text-blue-400 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-white">190+</p>
-            <p className="text-white/70">Countries</p>
+
+          <div className="rounded-3xl border border-line bg-ink-2 p-8">
+            <p className="label">Recent conversations</p>
+            {!stats || stats.recent.length === 0 ? (
+              <p className="mt-6 font-serif text-2xl italic text-muted">Nobody yet. Your first stranger is one click away.</p>
+            ) : (
+              <ul className="mt-4 divide-y divide-line">
+                {stats.recent.map((c) => (
+                  <li key={c.id} className="flex items-center justify-between py-3.5">
+                    <span className="flex items-center gap-3">
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-ink-3 font-serif text-lg italic">
+                        {c.partnerName[0]?.toUpperCase()}
+                      </span>
+                      <span>{c.partnerName}</span>
+                    </span>
+                    <span className="flex items-center gap-4 font-mono text-xs text-muted">
+                      <span>{formatDuration(c.durationSec)}</span>
+                      <span className="w-16 text-right">{timeAgo(c.startedAt)}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-          <div className="text-center bg-white/5 rounded-lg p-4 border border-white/10">
-            <Zap className="w-8 h-8 text-yellow-400 mx-auto mb-2" />
-            <p className="text-2xl font-bold text-white">2S</p>
-            <p className="text-white/70">Connection Time</p>
-          </div>
-        </div>
-      </div>
+        </section>
+      </main>
     </div>
   );
 }
