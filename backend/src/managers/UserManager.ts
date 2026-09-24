@@ -1,131 +1,121 @@
 import { Socket } from "socket.io";
 import { RoomManager } from "./RoomManager";
 
+const MAX_CHAT_LENGTH = 500;
+
 export interface User {
     socket: Socket;
     name: string;
+    userId?: string;
 }
 
 export class UserManager {
-    private users: User[];
-    private queue: string[];
-    private roomManager: RoomManager;
-    
-    constructor() {
-        this.users = [];
-        this.queue = [];
-        this.roomManager = new RoomManager();
-    }
+    private users = new Map<string, User>();
+    private queue: string[] = [];
+    private roomManager = new RoomManager();
 
+    /** Registers the socket (first "ready") or re-queues it (later "ready"). */
     addUser(name: string, socket: Socket) {
-        console.log(`Adding user ${name} with socket ${socket.id}`);
-        
-        this.users.push({
-            name, socket
-        });
-        
-        this.queue.push(socket.id);
-        
-        console.log(`User added. Queue length: ${this.queue.length}`);
-        console.log(`Queue contents: [${this.queue.join(', ')}]`);
-        
-        // Initialize handlers FIRST
-        this.initHandlers(socket);
-        
-        // Only emit lobby if they can't be paired immediately
-        if (this.queue.length < 2) {
-            socket.emit("lobby");
-            console.log(`Sent lobby event to ${name} - waiting for partner`);
+        const existing = this.users.get(socket.id);
+        if (existing) {
+            existing.name = name;
+        } else {
+            this.users.set(socket.id, { name, socket, userId: socket.data.userId });
+            this.initHandlers(socket);
         }
-        
-        // Try to pair users
-        this.clearQueue();
+        this.enqueue(socket.id);
     }
 
     removeUser(socketId: string) {
-        console.log(`Removing user with socket ${socketId}`);
-        
-        const user = this.users.find(x => x.socket.id === socketId);
-        if (user) {
-            console.log(`Removing user: ${user.name}`);
-        }
-        
-        // Remove from users array
-        this.users = this.users.filter(x => x.socket.id !== socketId);
-        
-        // Remove from queue
-        this.queue = this.queue.filter(x => x !== socketId);
-        
-        // Handle room cleanup - notify room manager
-        this.roomManager.removeUserFromRoom(socketId);
-        
-        console.log(`User removed. Remaining users: ${this.users.length}, Queue: ${this.queue.length}`);
+        this.dequeue(socketId);
+        const partner = this.roomManager.endRoomFor(socketId, "disconnected");
+        this.users.delete(socketId);
+        if (partner) this.enqueue(partner.socket.id);
     }
 
-    clearQueue() {
-        console.log("Inside clearQueue");
-        console.log(`Queue length: ${this.queue.length}`);
-        console.log(`Queue contents: [${this.queue.join(', ')}]`);
-        
-        // Need at least 2 users to create a room
-        if (this.queue.length < 2) {
-            console.log("Not enough users in queue to create room");
-            return;
-        }
-
-        // Get the first two users from queue (FIFO)
-        const id1 = this.queue.shift();
-        const id2 = this.queue.shift();
-        
-        console.log(`Attempting to pair users: ${id1} and ${id2}`);
-        
-        const user1 = this.users.find(x => x.socket.id === id1);
-        const user2 = this.users.find(x => x.socket.id === id2);
-
-        if (!user1 || !user2) {
-            console.log("Could not find both users");
-            // Add back to queue if users not found
-            if (user1) this.queue.unshift(id1!);
-            if (user2) this.queue.unshift(id2!);
-            return;
-        }
-        
-        console.log(`Creating room for ${user1.name} and ${user2.name}`);
-        const roomId = this.roomManager.createRoom(user1, user2);
-        console.log(`Room created with ID: ${roomId}`);
-        
-        // Recursively clear queue if more users are waiting
-        if (this.queue.length >= 2) {
-            this.clearQueue();
-        }
-    }
-
-    initHandlers(socket: Socket) {
-        console.log(`Initializing handlers for socket ${socket.id}`);
-        
-        socket.on("offer", ({sdp, roomId}: {sdp: string, roomId: string}) => {
-            console.log(`Received offer from ${socket.id} for room ${roomId}`);
-            this.roomManager.onOffer(roomId, sdp, socket.id);
-        });
-
-        socket.on("answer", ({sdp, roomId}: {sdp: string, roomId: string}) => {
-            console.log(`Received answer from ${socket.id} for room ${roomId}`);
-            this.roomManager.onAnswer(roomId, sdp, socket.id);
-        });
-
-        socket.on("add-ice-candidate", ({candidate, roomId, type}) => {
-            console.log(`Received ICE candidate from ${socket.id} for room ${roomId}, type: ${type}`);
-            this.roomManager.onIceCandidates(roomId, socket.id, candidate, type);
-        });
-    }
-
-    // Debug method to check current state
     getStatus() {
         return {
-            totalUsers: this.users.length,
-            queueLength: this.queue.length,
+            online: this.users.size,
+            searching: this.queue.length,
             activeRooms: this.roomManager.getRoomCount(),
-            queueUserIds: this.queue
         };
+    }
+
+    private enqueue(socketId: string) {
+        const user = this.users.get(socketId);
+        if (!user || this.roomManager.isInRoom(socketId) || this.queue.includes(socketId)) return;
+        this.queue.push(socketId);
+        user.socket.emit("lobby");
+        this.matchQueue();
+    }
+
+    private dequeue(socketId: string) {
+        this.queue = this.queue.filter((id) => id !== socketId);
+    }
+
+    /** Pairs waiting users FIFO, never pairing two tabs of the same account. */
+    private matchQueue() {
+        let i = 0;
+        while (i < this.queue.length) {
+            const first = this.users.get(this.queue[i]);
+            const j = this.queue.findIndex((id, idx) => {
+                if (idx <= i) return false;
+                const other = this.users.get(id);
+                return !!other && !(first?.userId && first.userId === other.userId);
+            });
+            if (!first || j === -1) {
+                i++;
+                continue;
+            }
+            const second = this.users.get(this.queue[j])!;
+            this.queue.splice(j, 1);
+            this.queue.splice(i, 1);
+            this.roomManager.createRoom(first, second);
+        }
+    }
+
+    private initHandlers(socket: Socket) {
+        socket.on("offer", ({ sdp, roomId } = {}) => {
+            if (sdp && typeof sdp === "object") this.roomManager.relay(socket.id, roomId, "offer", { sdp });
+        });
+
+        socket.on("answer", ({ sdp, roomId } = {}) => {
+            if (sdp && typeof sdp === "object") this.roomManager.relay(socket.id, roomId, "answer", { sdp });
+        });
+
+        socket.on("add-ice-candidate", ({ candidate, roomId } = {}) => {
+            if (candidate && typeof candidate === "object") {
+                this.roomManager.relay(socket.id, roomId, "add-ice-candidate", { candidate });
+            }
+        });
+
+        socket.on("media-state", ({ roomId, audio, video } = {}) => {
+            this.roomManager.relay(socket.id, roomId, "media-state", { audio: !!audio, video: !!video });
+        });
+
+        socket.on("chat-message", ({ roomId, text } = {}) => {
+            if (typeof text !== "string") return;
+            const trimmed = text.trim().slice(0, MAX_CHAT_LENGTH);
+            if (!trimmed) return;
+            this.roomManager.relay(socket.id, roomId, "chat-message", { text: trimmed, ts: Date.now() });
+        });
+
+        socket.on("typing", ({ roomId, typing } = {}) => {
+            this.roomManager.relay(socket.id, roomId, "typing", { typing: !!typing });
+        });
+
+        // Skip the current partner and look for a new one.
+        socket.on("next", () => {
+            const partner = this.roomManager.endRoomFor(socket.id, "skipped");
+            this.enqueue(socket.id);
+            if (partner) this.enqueue(partner.socket.id);
+        });
+
+        // Stop chatting entirely (stay connected, but out of the queue).
+        socket.on("leave", () => {
+            this.dequeue(socket.id);
+            const partner = this.roomManager.endRoomFor(socket.id, "left");
+            if (partner) this.enqueue(partner.socket.id);
+        });
     }
 }

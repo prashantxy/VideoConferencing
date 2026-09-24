@@ -1,145 +1,107 @@
+import { randomUUID } from "crypto";
 import { User } from "./UserManager";
+import { prisma } from "../prisma";
 
-let GLOBAL_ROOM_ID = 1;
+// Matches shorter than this (e.g. instant skips) are not written to call history.
+const MIN_RECORDED_CALL_SEC = 5;
 
 interface Room {
-    user1: User;
-    user2: User;
     roomId: string;
+    users: [User, User];
+    startedAt: Date;
 }
 
+export type EndReason = "skipped" | "left" | "disconnected";
+
 export class RoomManager {
-    private rooms: Map<string, Room>;
-    
-    constructor() {
-        this.rooms = new Map<string, Room>();
-    }
+    private rooms = new Map<string, Room>();
+    private roomBySocket = new Map<string, string>();
 
     createRoom(user1: User, user2: User): string {
-        const roomId = this.generate().toString();
-        
-        console.log(`Creating room ${roomId} for users ${user1.name} (${user1.socket.id}) and ${user2.name} (${user2.socket.id})`);
-        
-        this.rooms.set(roomId, {
-            user1, 
-            user2,
-            roomId
-        });
+        const roomId = randomUUID();
+        this.rooms.set(roomId, { roomId, users: [user1, user2], startedAt: new Date() });
+        this.roomBySocket.set(user1.socket.id, roomId);
+        this.roomBySocket.set(user2.socket.id, roomId);
 
         user1.socket.join(roomId);
         user2.socket.join(roomId);
-        
-        console.log(`Both users joined Socket.IO room ${roomId}`);
 
-        user1.socket.emit("send-offer", {
-            roomId
-        });
+        console.log(`Room ${roomId}: ${user1.name} <-> ${user2.name}`);
 
-        console.log(`Sent send-offer to ${user1.name} for room ${roomId}`);
-        
+        // user1 is the initiator: it creates the offer, user2 answers.
+        user1.socket.emit("matched", { roomId, partner: { name: user2.name }, initiator: true });
+        user2.socket.emit("matched", { roomId, partner: { name: user1.name }, initiator: false });
+        user1.socket.emit("send-offer", { roomId });
+
         return roomId;
     }
 
-    onOffer(roomId: string, sdp: string, senderSocketId: string) {
-        console.log(`Processing offer for room ${roomId} from sender ${senderSocketId}`);
-        
-        const room = this.rooms.get(roomId);
-        if (!room) {
-            console.log(`Room ${roomId} not found`);
-            return;
-        }
-
-        const receivingUser = room.user1.socket.id === senderSocketId ? room.user2 : room.user1;
-        
-        console.log(`Forwarding offer to ${receivingUser.name} (${receivingUser.socket.id})`);
-        
-        receivingUser.socket.emit("offer", {
-            sdp,
-            roomId
-        });
-    }
-    
-    onAnswer(roomId: string, sdp: string, senderSocketId: string) {
-        console.log(`Processing answer for room ${roomId} from sender ${senderSocketId}`);
-        
-        const room = this.rooms.get(roomId);
-        if (!room) {
-            console.log(`Room ${roomId} not found`);
-            return;
-        }
-
-        const receivingUser = room.user1.socket.id === senderSocketId ? room.user2 : room.user1;
-        
-        console.log(`Forwarding answer to ${receivingUser.name} (${receivingUser.socket.id})`);
-
-        receivingUser.socket.emit("answer", {
-            sdp,
-            roomId
-        });
+    isInRoom(socketId: string): boolean {
+        return this.roomBySocket.has(socketId);
     }
 
-    onIceCandidates(roomId: string, senderSocketId: string, candidate: any, type: "sender" | "receiver") {
-        console.log(`Processing ICE candidate for room ${roomId} from sender ${senderSocketId}, type: ${type}`);
-        
-        const room = this.rooms.get(roomId);
-        if (!room) {
-            console.log(`Room ${roomId} not found`);
-            return;
-        }
-
-        const receivingUser = room.user1.socket.id === senderSocketId ? room.user2 : room.user1;
-        
-        console.log(`Forwarding ICE candidate to ${receivingUser.name} (${receivingUser.socket.id})`);
-        
-        receivingUser.socket.emit("add-ice-candidate", {
-            candidate,
-            type
-        });
+    /** Forwards a signaling/chat event to the other member of the sender's room. */
+    relay(senderSocketId: string, roomId: unknown, event: string, payload: object) {
+        const room = typeof roomId === "string" ? this.rooms.get(roomId) : undefined;
+        if (!room) return;
+        const partner = this.partnerIn(room, senderSocketId);
+        if (!partner) return;
+        partner.socket.emit(event, { ...payload, roomId: room.roomId });
     }
 
-    removeUserFromRoom(socketId: string) {
-        console.log(`Removing user ${socketId} from all rooms`);
-        
-        for (const [roomId, room] of this.rooms.entries()) {
-            if (room.user1.socket.id === socketId || room.user2.socket.id === socketId) {
-                console.log(`Found user in room ${roomId}`);
-                
-                const otherUser = room.user1.socket.id === socketId ? room.user2 : room.user1;
-                
-                console.log(`Notifying ${otherUser.name} that partner left`);
-                otherUser.socket.emit("lobby");
-                otherUser.socket.leave(roomId);
-                
-                this.rooms.delete(roomId);
-                console.log(`Room ${roomId} deleted`);
-                
-                break; 
-            }
+    /**
+     * Tears down the room the socket is in. The partner is told why and is
+     * returned so the caller can put them back in the queue.
+     */
+    endRoomFor(socketId: string, reason: EndReason): User | null {
+        const roomId = this.roomBySocket.get(socketId);
+        const room = roomId ? this.rooms.get(roomId) : undefined;
+        if (!room) return null;
+
+        this.rooms.delete(room.roomId);
+        for (const u of room.users) {
+            this.roomBySocket.delete(u.socket.id);
+            u.socket.leave(room.roomId);
         }
+
+        const partner = this.partnerIn(room, socketId);
+        partner?.socket.emit("partner-left", { roomId: room.roomId, reason });
+        console.log(`Room ${room.roomId} ended (${reason})`);
+
+        this.recordCall(room).catch((err) => console.error("Failed to record call", err));
+        return partner;
     }
 
     getRoomCount(): number {
         return this.rooms.size;
     }
 
-    getRoomInfo(roomId: string): Room | undefined {
-        return this.rooms.get(roomId);
+    private partnerIn(room: Room, socketId: string): User | null {
+        const [a, b] = room.users;
+        if (a.socket.id === socketId) return b;
+        if (b.socket.id === socketId) return a;
+        return null;
     }
 
-    getAllRooms(): { [key: string]: { user1Name: string, user2Name: string } } {
-        const result: { [key: string]: { user1Name: string, user2Name: string } } = {};
-        
-        for (const [roomId, room] of this.rooms.entries()) {
-            result[roomId] = {
-                user1Name: room.user1.name,
-                user2Name: room.user2.name
-            };
-        }
-        
-        return result;
-    }
+    private async recordCall(room: Room) {
+        const endedAt = new Date();
+        const durationSec = Math.round((endedAt.getTime() - room.startedAt.getTime()) / 1000);
+        if (durationSec < MIN_RECORDED_CALL_SEC) return;
 
-    private generate(): number {
-        return GLOBAL_ROOM_ID++;
+        const [a, b] = room.users;
+        const rows = [
+            { user: a, partner: b },
+            { user: b, partner: a },
+        ]
+            .filter(({ user }) => user.userId)
+            .map(({ user, partner }) => ({
+                userId: user.userId!,
+                partnerName: partner.name,
+                startedAt: room.startedAt,
+                endedAt,
+                durationSec,
+            }));
+
+        if (rows.length) await prisma.call.createMany({ data: rows });
     }
 }

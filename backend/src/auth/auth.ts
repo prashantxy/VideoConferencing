@@ -1,33 +1,33 @@
-import express, { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { Router } from 'express';
 import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv';
 import { z } from 'zod';
+import { prisma } from '../prisma';
+import { AuthedRequest, requireAuth, signToken } from './jwt';
 
-dotenv.config();
 const router = Router();
-const app = express();
-const prisma = new PrismaClient();
-app.use(express.json());
-
-const JWT_SECRET = process.env.JWT_SECRET!;
 
 const signupSchema = z.object({
-  name: z.string().min(7, "Name must be at least 7 characters long"),
-  email: z.string().email("Invalid email format"),
+  name: z.string().trim().min(2, "Name must be at least 2 characters long").max(50),
+  email: z.string().trim().toLowerCase().email("Invalid email format"),
   password: z.string().min(6, "Password must be at least 6 characters"),
-  username: z.string().min(3, "Username must be at least 3 characters"),
+  username: z
+    .string()
+    .trim()
+    .min(3, "Username must be at least 3 characters")
+    .max(24, "Username must be at most 24 characters")
+    .regex(/^[a-zA-Z0-9_.]+$/, "Username can only contain letters, numbers, _ and ."),
 });
 
+// `username` may also be an email address.
 const signinSchema = z.object({
-  username: z.string().min(3, "Username must be at least 3 characters"),
+  username: z.string().trim().min(3, "Username must be at least 3 characters"),
   password: z.string().min(6, "Password must be at least 6 characters"),
 });
+
+const publicUser = { id: true, name: true, email: true, username: true, createdAt: true } as const;
 
 router.post('/signup', async (req, res) => {
   try {
-   
     const parsedData = signupSchema.safeParse(req.body);
     if (!parsedData.success) {
       return res.status(400).json({
@@ -41,17 +41,18 @@ router.post('/signup', async (req, res) => {
     });
 
     if (existing) {
-      return res.status(400).json({ error: 'User already exists' });
+      const field = existing.email === email ? 'email' : 'username';
+      return res.status(409).json({ error: `An account with that ${field} already exists` });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await prisma.user.create({
-      data: { name, email, username, password: hashedPassword }
+      data: { name, email, username, password: hashedPassword },
+      select: publicUser,
     });
 
-    const { password: _, ...userSafe } = user;
-    return res.json({ message: 'User registered successfully', user: userSafe });
+    return res.status(201).json({ message: 'User registered successfully', token: signToken(user.id), user });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Something went wrong' });
@@ -60,7 +61,6 @@ router.post('/signup', async (req, res) => {
 
 router.post('/signin', async (req, res) => {
   try {
- 
     const parsedData = signinSchema.safeParse(req.body);
     if (!parsedData.success) {
       return res.status(400).json({
@@ -69,15 +69,27 @@ router.post('/signin', async (req, res) => {
     }
     const { username, password } = parsedData.data;
 
-    const user = await prisma.user.findUnique({ where: { username } });
+    const user = await prisma.user.findUnique({
+      where: username.includes('@') ? { email: username.toLowerCase() } : { username },
+    });
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '1h' });
+    const { password: _, ...userSafe } = user;
+    return res.json({ message: 'Signin successful', token: signToken(user.id), user: userSafe });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Something went wrong' });
+  }
+});
 
-    return res.json({ message: 'Signin successful', token });
+router.get('/me', requireAuth, async (req: AuthedRequest, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: publicUser });
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    return res.json({ user });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Something went wrong' });
