@@ -2,8 +2,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowUpRight, LogOut, Mic, MicOff, RefreshCw, Video, VideoOff } from 'lucide-react';
-import { Button, Logo, OnlinePill } from '@/components/ui';
+import { Clock, Mic, MicOff, RefreshCw, Trophy, Users, Video, VideoOff } from 'lucide-react';
+import { Avatar, Button, Group, IconTile, NavBar, OnlinePill } from '@/components/ui';
 import { api, formatDuration, session, useOnlineCount, useSession } from '@/lib/api';
 import { mediaErrorText, useLocalMedia } from '@/lib/media';
 
@@ -14,12 +14,14 @@ interface Stats {
   recent: { id: string; partnerName: string; startedAt: string; durationSec: number }[];
 }
 
+const relative = new Intl.RelativeTimeFormat('en', { numeric: 'auto', style: 'short' });
+
 function timeAgo(iso: string) {
-  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60) return 'just now';
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
+  const diff = (new Date(iso).getTime() - Date.now()) / 1000;
+  if (diff > -60) return 'Just now';
+  if (diff > -3600) return relative.format(Math.round(diff / 60), 'minute');
+  if (diff > -86400) return relative.format(Math.round(diff / 3600), 'hour');
+  return relative.format(Math.round(diff / 86400), 'day');
 }
 
 function greeting() {
@@ -27,11 +29,28 @@ function greeting() {
   return h < 5 ? 'Up late' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
 }
 
+function MediaButton({ on, onClick, disabled, labelOn, labelOff, iconOn: IconOn, iconOff: IconOff }: {
+  on: boolean; onClick: () => void; disabled?: boolean; labelOn: string; labelOff: string;
+  iconOn: React.ElementType; iconOff: React.ElementType;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={on ? labelOn : labelOff}
+      aria-pressed={!on}
+      className={`pressable flex h-12 w-12 items-center justify-center rounded-full disabled:opacity-40 ${on ? 'glass-chip text-label' : 'bg-white text-black'}`}
+    >
+      {on ? <IconOn className="h-5 w-5" /> : <IconOff className="h-5 w-5" />}
+    </button>
+  );
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const { user, logout } = useSession();
   const online = useOnlineCount();
-  const prefs = typeof window !== 'undefined' ? session.chatPrefs() : null;
+  const [prefs] = useState(() => (typeof window === 'undefined' ? null : session.chatPrefs()));
   const media = useLocalMedia({ audio: prefs?.hasAudio ?? true, video: prefs?.hasVideo ?? true });
   const [name, setName] = useState('');
   const [stats, setStats] = useState<Stats | null>(null);
@@ -39,8 +58,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (user && !name) setName(prefs?.name || user.name.split(' ')[0]);
-     
-  }, [user]);
+  }, [user, name, prefs]);
 
   useEffect(() => {
     if (!user) return;
@@ -49,7 +67,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (videoRef.current) videoRef.current.srcObject = media.stream;
-  }, [media.stream]);
+  }, [media.stream, user]);
 
   const start = (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,143 +78,144 @@ export default function Dashboard() {
 
   if (!user) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <span className="label blink">Loading…</span>
+      <div className="flex min-h-dvh items-center justify-center">
+        <div className="wallpaper" />
+        <span className="text-[15px] text-label-2">Loading…</span>
       </div>
     );
   }
 
+  const tiles = [
+    { icon: Users, tile: 'bg-gradient-to-b from-[#64d2ff] to-[#0a84ff]', label: 'Conversations', value: stats ? String(stats.totalCalls) : '–' },
+    { icon: Clock, tile: 'bg-gradient-to-b from-[#bf5af2] to-[#5e5ce6]', label: 'Time talking', value: stats ? formatDuration(stats.totalSeconds) : '–' },
+    { icon: Trophy, tile: 'bg-gradient-to-b from-[#ffd60a] to-[#ff9f0a]', label: 'Longest chat', value: stats ? formatDuration(stats.longestSeconds) : '–' },
+  ];
+
   return (
-    <div className="min-h-screen">
-      <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
-        <Logo />
-        <div className="flex items-center gap-3">
-          <span className="hidden sm:inline-flex"><OnlinePill count={online} /></span>
-          <Button variant="ghost" onClick={logout} aria-label="Log out">
-            <LogOut className="h-4 w-4" /> <span className="hidden sm:inline">Log out</span>
-          </Button>
-        </div>
-      </header>
+    <div className="min-h-dvh pb-16">
+      <div className="wallpaper" />
+      <NavBar>
+        <OnlinePill count={online} className="hidden sm:inline-flex" />
+        <span className="hidden items-center gap-2 ps-2 md:inline-flex">
+          <Avatar name={user.name} size={28} />
+          <span className="text-[15px] font-medium">{user.name}</span>
+        </span>
+        <Button size="sm" variant="gray" onClick={logout}>Sign out</Button>
+      </NavBar>
 
-      <main className="mx-auto max-w-6xl px-6 pb-20">
-        <section className="rise pb-10 pt-8">
-          <p className="label">@{user.username}</p>
-          <h1 className="mt-3 font-serif text-5xl md:text-7xl">
-            {greeting()}, <em className="text-signal">{user.name.split(' ')[0]}.</em>
-          </h1>
-        </section>
+      <main className="mx-auto max-w-6xl px-4">
+        <header className="materialize px-2 pb-8 pt-12">
+          <p className="text-[15px] font-medium text-label-2">@{user.username}</p>
+          <h1 className="large-title mt-1 text-[clamp(2.25rem,5vw,3.25rem)]">{greeting()}, {user.name.split(' ')[0]}</h1>
+        </header>
 
-        <section className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
-          {/* Camera preview */}
-          <div className="relative aspect-video overflow-hidden rounded-3xl border border-line bg-ink-2">
-            <video ref={videoRef} autoPlay playsInline muted className={`mirror h-full w-full object-cover transition-opacity ${media.videoOn && media.stream ? 'opacity-100' : 'opacity-0'}`} />
-
-            {!media.stream && !media.error && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="label blink">Waking up your camera…</span>
-              </div>
-            )}
-            {media.error && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center">
-                <VideoOff className="h-8 w-8 text-danger" />
-                <p className="max-w-sm text-sm text-muted">{mediaErrorText[media.error]}</p>
-                <Button variant="ghost" onClick={media.retry}><RefreshCw className="h-4 w-4" /> Try again</Button>
-              </div>
-            )}
-            {media.stream && !media.videoOn && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="flex h-24 w-24 items-center justify-center rounded-full bg-ink-3 font-serif text-5xl italic">
-                  {(name || user.name)[0]?.toUpperCase()}
-                </span>
-              </div>
-            )}
-
-            <div className="absolute left-4 top-4 label rounded-full bg-ink/70 px-3 py-1.5 backdrop-blur">Preview</div>
-            <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-2">
-              <button
-                onClick={media.toggleAudio}
-                disabled={!media.stream}
-                aria-label={media.audioOn ? 'Mute microphone' : 'Unmute microphone'}
-                className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors disabled:opacity-40 ${media.audioOn ? 'bg-ink/70 hover:bg-ink-3' : 'bg-danger text-ink'}`}
-              >
-                {media.audioOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
-              </button>
-              <button
-                onClick={media.toggleVideo}
-                disabled={!media.stream}
-                aria-label={media.videoOn ? 'Turn camera off' : 'Turn camera on'}
-                className={`flex h-12 w-12 items-center justify-center rounded-full backdrop-blur transition-colors disabled:opacity-40 ${media.videoOn ? 'bg-ink/70 hover:bg-ink-3' : 'bg-danger text-ink'}`}
-              >
-                {media.videoOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
-              </button>
-            </div>
-          </div>
-
-          {/* Start panel */}
-          <form onSubmit={start} className="flex flex-col justify-between gap-8 rounded-3xl border border-line bg-ink-2 p-8">
-            <div>
-              <p className="label">Ready when you are</p>
-              <h2 className="mt-3 font-serif text-4xl">Who&apos;s calling?</h2>
-              <p className="mt-2 text-sm text-muted">This is the only thing your partner will know about you.</p>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                maxLength={40}
-                placeholder="Your display name"
-                aria-label="Display name"
-                className="mt-6 w-full border-b border-line-strong bg-transparent pb-3 font-serif text-3xl italic text-cream placeholder:text-muted/50 focus:border-signal focus:outline-none"
+        <div className="grid gap-4 lg:grid-cols-[1.55fr_1fr]">
+          {/* Camera preview: 8px inset, so the video radius is 28 − 8 = 20. */}
+          <section aria-label="Camera preview" className="glass-thick materialize rounded-[28px] p-2" style={{ '--delay': '60ms' } as React.CSSProperties}>
+            <div className="theme-dark relative aspect-video overflow-hidden rounded-[20px] bg-black">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className={`mirror h-full w-full object-cover transition-opacity duration-300 ${media.videoOn && media.stream ? 'opacity-100' : 'opacity-0'}`}
               />
+
+              {!media.stream && !media.error && (
+                <div className="absolute inset-0 flex items-center justify-center text-[15px] text-label-2">Starting camera…</div>
+              )}
+              {media.error && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center">
+                  <VideoOff className="h-8 w-8 text-label-2" />
+                  <p className="max-w-sm text-pretty text-[15px] text-label-2">{mediaErrorText[media.error]}</p>
+                  <Button variant="glass" onClick={media.retry}><RefreshCw className="h-4 w-4" /> Try Again</Button>
+                </div>
+              )}
+              {media.stream && !media.videoOn && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+                  <Avatar name={name || user.name} size={96} />
+                  <span className="text-[13px] font-medium text-label-2">Camera is off</span>
+                </div>
+              )}
+
+              <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-3">
+                <MediaButton on={media.audioOn} onClick={media.toggleAudio} disabled={!media.stream} labelOn="Mute microphone" labelOff="Unmute microphone" iconOn={Mic} iconOff={MicOff} />
+                <MediaButton on={media.videoOn} onClick={media.toggleVideo} disabled={!media.stream} labelOn="Turn camera off" labelOff="Turn camera on" iconOn={Video} iconOff={VideoOff} />
+              </div>
+            </div>
+          </section>
+
+          {/* Start */}
+          <form onSubmit={start} className="glass-thick materialize flex flex-col justify-between gap-8 rounded-[28px] p-7" style={{ '--delay': '120ms' } as React.CSSProperties}>
+            <div>
+              <h2 className="text-[22px] font-bold tracking-[-0.015em]">Ready to chat?</h2>
+              <p className="mt-1 text-pretty text-[15px] text-label-2">Your display name is the only thing your partner sees.</p>
+              <Group className="mt-6">
+                <label className="flex min-h-12 items-center gap-3 px-4">
+                  <span className="w-24 shrink-0 text-[15px]">Name</span>
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    maxLength={40}
+                    placeholder="Display name"
+                    className="h-12 min-w-0 flex-1 bg-transparent text-base placeholder:text-label-3 focus:outline-none sm:text-[15px]"
+                  />
+                </label>
+              </Group>
+              <p className="mt-3 px-4 text-[13px] text-label-3">
+                Joining with mic {media.audioOn ? 'on' : 'off'} and camera {media.videoOn ? 'on' : 'off'}.
+              </p>
             </div>
             <div>
               <Button type="submit" size="lg" disabled={!name.trim() || !media.stream} className="w-full">
-                Find someone <ArrowUpRight className="h-5 w-5" />
+                <Video className="h-5 w-5" fill="currentColor" /> Start Video Chat
               </Button>
-              <p className="label mt-4 text-center">
-                {online !== null && online > 0 ? `${online} ${online === 1 ? 'person' : 'people'} connected` : 'Be the first one in'}
+              <p className="tabular mt-3 text-center text-[13px] text-label-3">
+                {online !== null && online > 0 ? `${online} ${online === 1 ? 'person is' : 'people are'} in chat right now` : 'Be the first one in'}
               </p>
             </div>
           </form>
-        </section>
+        </div>
 
-        {/* History */}
-        <section className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.5fr]">
-          <div className="grid grid-cols-3 gap-px overflow-hidden rounded-3xl border border-line bg-line lg:grid-cols-1">
-            {[
-              { k: 'Conversations', v: stats ? String(stats.totalCalls) : '–' },
-              { k: 'Time talking', v: stats ? formatDuration(stats.totalSeconds) : '–' },
-              { k: 'Longest chat', v: stats ? formatDuration(stats.longestSeconds) : '–' },
-            ].map(({ k, v }) => (
-              <div key={k} className="bg-ink-2 p-6">
-                <p className="label">{k}</p>
-                <p className="mt-2 font-serif text-4xl">{v}</p>
+        <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1.55fr]">
+          <section aria-label="Your stats" className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
+            {tiles.map(({ icon, tile, label, value }, i) => (
+              <div key={label} className="glass materialize flex items-center gap-4 rounded-[24px] p-5" style={{ '--delay': `${180 + i * 60}ms` } as React.CSSProperties}>
+                <IconTile icon={icon} className={tile} />
+                <div>
+                  <p className="text-[13px] font-medium text-label-2">{label}</p>
+                  <p className="tabular text-[22px] font-bold tracking-[-0.015em]">{value}</p>
+                </div>
               </div>
             ))}
-          </div>
+          </section>
 
-          <div className="rounded-3xl border border-line bg-ink-2 p-8">
-            <p className="label">Recent conversations</p>
+          <section className="glass materialize rounded-[28px] p-6" style={{ '--delay': '240ms' } as React.CSSProperties}>
+            <h2 className="text-[22px] font-bold tracking-[-0.015em]">Recents</h2>
             {!stats || stats.recent.length === 0 ? (
-              <p className="mt-6 font-serif text-2xl italic text-muted">Nobody yet. Your first stranger is one click away.</p>
+              <div className="flex flex-col items-center gap-2 py-12 text-center">
+                <Users className="h-8 w-8 text-label-3" />
+                <p className="text-[15px] font-medium">No conversations yet</p>
+                <p className="text-[13px] text-label-2">People you talk to for more than a few seconds show up here.</p>
+              </div>
             ) : (
-              <ul className="mt-4 divide-y divide-line">
+              <ul className="mt-3">
                 {stats.recent.map((c) => (
-                  <li key={c.id} className="flex items-center justify-between py-3.5">
-                    <span className="flex items-center gap-3">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-ink-3 font-serif text-lg italic">
-                        {c.partnerName[0]?.toUpperCase()}
+                  <li key={c.id} className="group flex items-center gap-3 py-2">
+                    <Avatar name={c.partnerName} size={40} />
+                    <div className="flex min-w-0 flex-1 items-center justify-between gap-3 border-b border-separator py-2 group-last:border-b-0">
+                      <span className="truncate text-[17px]">{c.partnerName}</span>
+                      <span className="tabular flex shrink-0 items-baseline gap-3 text-[15px] text-label-2">
+                        <span>{formatDuration(c.durationSec)}</span>
+                        <span className="w-20 text-right text-[13px] text-label-3">{timeAgo(c.startedAt)}</span>
                       </span>
-                      <span>{c.partnerName}</span>
-                    </span>
-                    <span className="flex items-center gap-4 font-mono text-xs text-muted">
-                      <span>{formatDuration(c.durationSec)}</span>
-                      <span className="w-16 text-right">{timeAgo(c.startedAt)}</span>
-                    </span>
+                    </div>
                   </li>
                 ))}
               </ul>
             )}
-          </div>
-        </section>
+          </section>
+        </div>
       </main>
     </div>
   );

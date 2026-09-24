@@ -2,20 +2,29 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowUpRight, Lock, Shuffle, MessageSquare } from 'lucide-react';
-import { Button, Logo, OnlinePill } from '@/components/ui';
+import { ChevronRight, Lock, MessageCircle, Mic, PhoneOff, Shuffle, Video } from 'lucide-react';
+import { AppIcon, Avatar, Button, IconTile, NavBar, OnlinePill } from '@/components/ui';
 import { session, useOnlineCount } from '@/lib/api';
 
-const steps = [
-  { n: '01', title: 'Check your light', body: 'Preview your camera, pick the name people will see, mute whatever you like.' },
-  { n: '02', title: 'Get matched', body: 'We pair you with whoever is waiting. Usually in a second or two.' },
-  { n: '03', title: 'Talk, or skip', body: 'Video, audio and a text side-channel. Press Esc to meet someone new.' },
-];
-
-const notes = [
-  { icon: Lock, title: 'Peer to peer', body: 'Video flows directly between browsers over WebRTC. The server only makes the introduction.' },
-  { icon: Shuffle, title: 'Always someone new', body: 'Skip at any time. Your partner is put straight back in line, no hard feelings.' },
-  { icon: MessageSquare, title: 'Chat on the side', body: 'Share a link, spell a name, or just type when the mic is off.' },
+const features = [
+  {
+    icon: Shuffle,
+    tile: 'bg-gradient-to-b from-[#ff9f0a] to-[#ff6a00]',
+    title: 'Someone new, every time',
+    body: 'Tap Next whenever you like. Your partner goes straight back in line.',
+  },
+  {
+    icon: Lock,
+    tile: 'bg-gradient-to-b from-[#30d158] to-[#0c9f6f]',
+    title: 'Peer to peer',
+    body: 'Video goes directly between your browsers over WebRTC. Our server only makes the introduction.',
+  },
+  {
+    icon: MessageCircle,
+    tile: 'bg-gradient-to-b from-[#64d2ff] to-[#0a84ff]',
+    title: 'Messages on the side',
+    body: 'Share a link, spell a name, or keep talking with your mic off.',
+  },
 ];
 
 export default function HomePage() {
@@ -27,94 +36,74 @@ export default function HomePage() {
   }, [router]);
 
   return (
-    <div className="min-h-screen">
-      <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
-        <Logo />
-        <div className="flex items-center gap-3">
-          <span className="hidden sm:inline-flex"><OnlinePill count={online} /></span>
-          <Button variant="ghost" onClick={() => router.push('/Authpage')}>Sign in</Button>
-        </div>
-      </header>
+    <div className="min-h-dvh pb-10">
+      <div className="wallpaper" />
+      <NavBar>
+        <OnlinePill count={online} className="hidden sm:inline-flex" />
+        <Button size="sm" variant="gray" onClick={() => router.push('/Authpage')}>Sign in</Button>
+      </NavBar>
 
-      <main className="mx-auto max-w-6xl px-6">
-        <section className="grid items-end gap-12 pb-20 pt-12 md:grid-cols-[1.4fr_1fr] md:pt-24">
-          <div className="rise">
-            <p className="label mb-6">Random video conversations · peer to peer</p>
-            <h1 className="font-serif text-[clamp(3.5rem,11vw,9rem)] leading-[0.88] tracking-tight">
-              Say hello<br />
-              to a <em className="text-signal">stranger.</em>
-            </h1>
-            <p className="mt-8 max-w-md text-lg leading-relaxed text-muted">
-              One click puts you face to face with someone new, somewhere in the world.
-              No feeds, no followers. Just a conversation.
-            </p>
-            <div className="mt-10 flex flex-wrap items-center gap-3">
-              <Button size="lg" onClick={() => router.push('/Authpage?mode=signup')}>
-                Start talking <ArrowUpRight className="h-5 w-5" />
-              </Button>
-              <Button size="lg" variant="ghost" onClick={() => router.push('/Authpage')}>
-                I have an account
-              </Button>
-            </div>
+      <main className="mx-auto max-w-6xl px-4">
+        <section className="flex flex-col items-center pt-20 text-center md:pt-28">
+          <div className="materialize"><AppIcon size={88} /></div>
+          <h1 className="large-title materialize mt-8 max-w-3xl text-[clamp(2.75rem,7vw,5rem)]" style={{ '--delay': '80ms' } as React.CSSProperties}>
+            Meet someone new.<br />
+            <span className="bg-gradient-to-r from-[#0a84ff] via-[#5e5ce6] to-[#bf5af2] bg-clip-text text-transparent">Face to face.</span>
+          </h1>
+          <p className="materialize mt-6 max-w-xl text-pretty text-[19px] leading-relaxed text-label-2" style={{ '--delay': '160ms' } as React.CSSProperties}>
+            One tap starts a one-on-one video chat with someone, somewhere in the world. No feeds, no followers, just a conversation.
+          </p>
+          <div className="materialize mt-9 flex flex-wrap justify-center gap-3" style={{ '--delay': '240ms' } as React.CSSProperties}>
+            <Button size="lg" onClick={() => router.push('/Authpage?mode=signup')}>Get started</Button>
+            <Button size="lg" variant="gray" onClick={() => router.push('/Authpage')} className="ps-7 pe-5">
+              I have an account <ChevronRight className="h-5 w-5" />
+            </Button>
           </div>
+        </section>
 
-          {/* A faux call window to set the mood. */}
-          <div className="rise relative hidden aspect-[4/5] overflow-hidden rounded-[2rem] border border-line bg-ink-2 md:block" style={{ animationDelay: '150ms' }}>
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,91,46,0.35),transparent_55%),radial-gradient(circle_at_80%_90%,rgba(182,243,106,0.12),transparent_50%)]" />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="relative flex h-28 w-28 items-center justify-center">
-                <span className="ring absolute inset-0 rounded-full border border-signal/60" />
-                <span className="ring absolute inset-0 rounded-full border border-signal/60" style={{ animationDelay: '1.2s' }} />
-                <span className="font-serif text-5xl italic">?</span>
+        {/* Product preview: a call window rendered in the same materials as the real one. */}
+        <section aria-hidden="true" className="materialize mx-auto mt-16 max-w-4xl md:mt-20" style={{ '--delay': '320ms' } as React.CSSProperties}>
+          <div className="glass-thick rounded-[36px] p-3">
+            <div className="relative aspect-[16/9] overflow-hidden rounded-[24px] bg-gradient-to-br from-[#1d2b64] via-[#3a2a6b] to-[#0f3d3e]">
+              <div className="absolute inset-0 bg-[radial-gradient(60%_70%_at_40%_40%,rgb(255_255_255/0.14),transparent_70%)]" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Avatar name="Maya" size={120} className="shadow-2xl" />
               </div>
-            </div>
-            <div className="absolute left-5 top-5 label">● live</div>
-            <div className="absolute bottom-5 left-5 right-5 flex items-end justify-between">
-              <div>
-                <p className="label">Up next</p>
-                <p className="font-serif text-3xl italic">someone new</p>
+              <div className="theme-dark absolute left-4 top-4 flex items-center gap-2 rounded-full glass-chip px-3.5 py-1.5 text-[13px] font-medium text-label">
+                <span className="h-2 w-2 rounded-full bg-green" /> Maya <span className="tabular text-label-2">04:12</span>
               </div>
-              <div className="h-24 w-20 rounded-xl border border-line-strong bg-ink-3" />
+              <div className="absolute bottom-4 right-4 aspect-[3/4] w-[18%] overflow-hidden rounded-[14px] bg-gradient-to-b from-[#ff9f0a] to-[#ff375f] shadow-xl ring-1 ring-white/20" />
+              <div className="theme-dark absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full glass-chip p-2">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-fill text-label"><Mic className="h-[18px] w-[18px]" /></span>
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-fill text-label"><Video className="h-[18px] w-[18px]" /></span>
+                <span className="flex h-10 items-center rounded-full bg-tint px-5 text-[15px] font-semibold text-white">Next</span>
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-red text-white"><PhoneOff className="h-[18px] w-[18px]" /></span>
+              </div>
             </div>
           </div>
         </section>
 
-        <section className="border-t border-line py-20">
-          <p className="label mb-10">How it works</p>
-          <div className="grid gap-10 md:grid-cols-3">
-            {steps.map((s) => (
-              <div key={s.n}>
-                <p className="font-mono text-sm text-signal">{s.n}</p>
-                <h3 className="mt-3 font-serif text-3xl">{s.title}</h3>
-                <p className="mt-3 leading-relaxed text-muted">{s.body}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="grid gap-px overflow-hidden rounded-3xl border border-line bg-line md:grid-cols-3">
-          {notes.map(({ icon: Icon, title, body }) => (
-            <div key={title} className="bg-ink p-8">
-              <Icon className="h-5 w-5 text-signal" />
-              <h3 className="mt-6 text-lg font-medium">{title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted">{body}</p>
-            </div>
+        <section className="mx-auto mt-24 grid max-w-5xl gap-4 md:grid-cols-3">
+          {features.map(({ icon, tile, title, body }) => (
+            <article key={title} className="glass rounded-[28px] p-7">
+              <IconTile icon={icon} className={tile} />
+              <h2 className="mt-5 text-[19px] font-semibold tracking-[-0.01em]">{title}</h2>
+              <p className="mt-2 text-pretty text-[15px] leading-relaxed text-label-2">{body}</p>
+            </article>
           ))}
         </section>
 
-        <section className="py-28 text-center">
-          <h2 className="font-serif text-5xl md:text-7xl">
-            Somebody is <em className="text-signal">waiting.</em>
-          </h2>
-          <Button size="lg" className="mt-10" onClick={() => router.push('/Authpage?mode=signup')}>
-            Create a free account
-          </Button>
+        <section className="glass mx-auto mt-4 flex max-w-5xl flex-col items-center gap-6 rounded-[28px] px-8 py-12 text-center md:flex-row md:justify-between md:text-left">
+          <div>
+            <h2 className="large-title text-[32px]">Somebody’s waiting to say hi.</h2>
+            <p className="mt-2 text-[15px] text-label-2">Free to use. Your camera never turns on until you say so.</p>
+          </div>
+          <Button size="lg" onClick={() => router.push('/Authpage?mode=signup')}>Create account</Button>
         </section>
       </main>
 
-      <footer className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 border-t border-line px-6 py-8">
-        <Logo />
-        <p className="label">Be kind. Everyone on the other side is a person.</p>
+      <footer className="mx-auto mt-12 max-w-5xl px-4 text-center text-[13px] text-label-3">
+        Be kind. There’s a real person on the other side.
       </footer>
     </div>
   );

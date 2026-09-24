@@ -1,99 +1,250 @@
 @import "tailwindcss";
 
+/*
+ * Apple-style system tokens. Labels, fills and tints follow the iOS/macOS
+ * semantic colors; glass materials get thicker as surfaces get bigger.
+ */
 :root {
-  --ink: #0d0c0a;
-  --ink-2: #16140f;
-  --ink-3: #211e18;
-  --line: rgba(242, 237, 228, 0.1);
-  --line-strong: rgba(242, 237, 228, 0.22);
-  --cream: #f2ede4;
-  --muted: #9a9387;
-  --signal: #ff5b2e;
-  --signal-deep: #e2441a;
-  --live: #b6f36a;
-  --danger: #ff6b6b;
+  --canvas: #eef0f6;
+  --label: rgb(0 0 0 / 0.88);
+  --label-2: rgb(60 60 67 / 0.74);
+  --label-3: rgb(60 60 67 / 0.5);
+  --fill: rgb(120 120 128 / 0.12);
+  --fill-hover: rgb(120 120 128 / 0.2);
+  --separator: rgb(60 60 67 / 0.14);
+  --tint: #007aff;
+  --green: #34c759;
+  --red: #ff3b30;
+  --on-tint: #fff;
+
+  --glass: rgb(255 255 255 / 0.52);
+  --glass-thick: rgb(255 255 255 / 0.66);
+  --glass-stroke: rgb(255 255 255 / 0.7);
+  --glass-edge: rgb(0 0 0 / 0.06);
+  --glass-shadow: 0 1px 1px rgb(0 0 0 / 0.04), 0 8px 24px -6px rgb(30 40 80 / 0.14), 0 24px 64px -12px rgb(30 40 80 / 0.16);
+  --field: rgb(255 255 255 / 0.62);
+
+  --wall-1: #b9d4ff;
+  --wall-2: #f5c8ff;
+  --wall-3: #bff3e6;
+  --wall-4: #ffd9b8;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-@theme inline {
-  --color-ink: var(--ink);
-  --color-ink-2: var(--ink-2);
-  --color-ink-3: var(--ink-3);
-  --color-line: var(--line);
-  --color-line-strong: var(--line-strong);
-  --color-cream: var(--cream);
-  --color-muted: var(--muted);
-  --color-signal: var(--signal);
-  --color-signal-deep: var(--signal-deep);
-  --color-live: var(--live);
-  --color-danger: var(--danger);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-serif: var(--font-instrument-serif);
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #000;
+    --label: rgb(255 255 255 / 0.96);
+    --label-2: rgb(235 235 245 / 0.66);
+    --label-3: rgb(235 235 245 / 0.42);
+    --fill: rgb(120 120 128 / 0.28);
+    --fill-hover: rgb(120 120 128 / 0.4);
+    --separator: rgb(84 84 88 / 0.55);
+    --tint: #0a84ff;
+    --green: #30d158;
+    --red: #ff453a;
+
+    --glass: rgb(38 38 44 / 0.46);
+    --glass-thick: rgb(28 28 32 / 0.6);
+    --glass-stroke: rgb(255 255 255 / 0.14);
+    --glass-edge: rgb(0 0 0 / 0.3);
+    --glass-shadow: 0 1px 1px rgb(0 0 0 / 0.2), 0 12px 32px -8px rgb(0 0 0 / 0.5), 0 32px 80px -16px rgb(0 0 0 / 0.6);
+    --field: rgb(118 118 128 / 0.24);
+
+    --wall-1: #1b3a8f;
+    --wall-2: #5a1f7a;
+    --wall-3: #0d5c55;
+    --wall-4: #7a3a1a;
+  }
 }
 
-html {
+/* The call room is always dark, like FaceTime. */
+.theme-dark {
+  --canvas: #000;
+  --label: rgb(255 255 255 / 0.96);
+  --label-2: rgb(235 235 245 / 0.7);
+  --label-3: rgb(235 235 245 / 0.45);
+  --fill: rgb(255 255 255 / 0.14);
+  --fill-hover: rgb(255 255 255 / 0.22);
+  --separator: rgb(255 255 255 / 0.14);
+  --tint: #0a84ff;
+  --green: #30d158;
+  --red: #ff453a;
+  --glass: rgb(30 30 34 / 0.5);
+  --glass-thick: rgb(24 24 28 / 0.62);
+  --glass-stroke: rgb(255 255 255 / 0.16);
+  --glass-edge: rgb(0 0 0 / 0.3);
+  --glass-shadow: 0 1px 1px rgb(0 0 0 / 0.2), 0 12px 32px -8px rgb(0 0 0 / 0.5), 0 32px 80px -16px rgb(0 0 0 / 0.6);
+  --field: rgb(255 255 255 / 0.1);
   color-scheme: dark;
 }
 
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-label: var(--label);
+  --color-label-2: var(--label-2);
+  --color-label-3: var(--label-3);
+  --color-fill: var(--fill);
+  --color-fill-hover: var(--fill-hover);
+  --color-separator: var(--separator);
+  --color-tint: var(--tint);
+  --color-green: var(--green);
+  --color-red: var(--red);
+  --color-field: var(--field);
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", var(--font-inter), system-ui, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", var(--font-inter), system-ui, sans-serif;
+}
+
+html {
+  color-scheme: light dark;
+}
+
 body {
-  background: var(--ink);
-  color: var(--cream);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
-  -webkit-font-smoothing: antialiased;
+  background: var(--canvas);
+  color: var(--label);
+  font-family: var(--font-sans);
+  font-optical-sizing: auto;
 }
 
 ::selection {
-  background: var(--signal);
-  color: var(--ink);
+  background: color-mix(in oklab, var(--tint) 35%, transparent);
 }
 
-/* Film grain over the whole page. */
-.grain::after {
-  content: "";
+/* ---------- Wallpaper: soft color fields for the glass to refract ---------- */
+.wallpaper {
   position: fixed;
   inset: 0;
-  pointer-events: none;
-  z-index: 50;
-  opacity: 0.06;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  z-index: -1;
+  background:
+    radial-gradient(40% 50% at 12% 18%, var(--wall-1), transparent 70%),
+    radial-gradient(38% 46% at 88% 12%, var(--wall-2), transparent 70%),
+    radial-gradient(44% 50% at 78% 88%, var(--wall-3), transparent 70%),
+    radial-gradient(36% 42% at 18% 92%, var(--wall-4), transparent 70%),
+    var(--canvas);
 }
 
-.label {
-  font-family: var(--font-geist-mono), ui-monospace, monospace;
-  font-size: 0.7rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
+/* ---------- Materials ---------- */
+.glass,
+.glass-thick {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  /* Bright inner top edge = light catching the material; faint outer ring for definition. */
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-stroke),
+    inset 0 0 0 1px color-mix(in oklab, var(--glass-stroke) 45%, transparent),
+    0 0 0 1px var(--glass-edge),
+    var(--glass-shadow);
 }
 
-@keyframes ring {
-  0% { transform: scale(0.6); opacity: 0.7; }
-  100% { transform: scale(2.4); opacity: 0; }
-}
-.ring {
-  animation: ring 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+.glass-thick {
+  background: var(--glass-thick);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
 }
 
-@keyframes rise {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: none; }
-}
-.rise {
-  animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+/* Lighter chrome that floats over video: no big drop shadow. */
+.glass-chip {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: inset 0 1px 0 0 var(--glass-stroke), 0 0 0 1px var(--glass-edge);
 }
 
-@keyframes blink {
+@media (prefers-reduced-transparency: reduce) {
+  .glass, .glass-thick, .glass-chip {
+    background: color-mix(in oklab, var(--canvas) 92%, var(--label) 8%);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .glass, .glass-thick, .glass-chip {
+    background: var(--canvas);
+    box-shadow: 0 0 0 1px var(--label-2);
+  }
+}
+
+/* ---------- Interaction ---------- */
+.pressable {
+  transition-property: transform, background-color, filter, opacity;
+  transition-duration: 160ms;
+  transition-timing-function: var(--ease-out);
+}
+.pressable:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+:focus-visible {
+  outline: 2px solid var(--tint);
+  outline-offset: 2px;
+}
+
+/* ---------- Motion ---------- */
+
+/* Surfaces materialize (blur + scale + opacity) rather than just fading. */
+@keyframes materialize {
+  from { opacity: 0; transform: scale(0.97); filter: blur(8px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+.materialize {
+  animation: materialize 560ms var(--ease-out) both;
+  animation-delay: var(--delay, 0ms);
+}
+
+@keyframes pulse-ring {
+  from { transform: scale(1); opacity: 0.55; }
+  to { transform: scale(1.9); opacity: 0; }
+}
+.pulse-ring {
+  animation: pulse-ring 2s var(--ease-out) infinite;
+}
+
+@keyframes live-dot {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.25; }
+  50% { opacity: 0.35; }
 }
-.blink {
-  animation: blink 1.6s ease-in-out infinite;
+.live-dot {
+  animation: live-dot 2s ease-in-out infinite;
 }
 
-.mirror {
-  transform: scaleX(-1);
+.bubble {
+  transition: opacity 220ms var(--ease-out), transform 220ms var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ring, .rise, .blink { animation: none; }
+  .materialize { animation: fade-in 200ms ease both; }
+  .pulse-ring, .live-dot { animation: none; }
+  .pressable:active:not(:disabled) { transform: none; }
+  .bubble { transition: opacity 150ms ease; @starting-style { transform: none; } }
+}
+@keyframes fade-in { from { opacity: 0; } }
+
+/* ---------- Type ---------- */
+.large-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+.mirror { transform: scaleX(-1); }
+
+.sr-only-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
