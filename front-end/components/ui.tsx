@@ -6,10 +6,10 @@ export function AppIcon({ size = 32 }: { size?: number }) {
   return (
     <span
       aria-hidden="true"
-      className="inline-flex shrink-0 items-center justify-center bg-gradient-to-b from-[#5ac8fa] to-[#0a64f0] text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.35),0_4px_12px_-2px_rgb(10_100_240/0.45)]"
+      className="inline-flex shrink-0 items-center justify-center bg-gradient-to-b from-[#3a3a3d] to-[#0c0c0e] text-[#f5f5f7] shadow-[inset_0_1px_0_rgb(255_255_255/0.22),inset_0_0_0_1px_rgb(255_255_255/0.08),0_8px_24px_-6px_rgb(0_0_0/0.8)]"
       style={{ width: size, height: size, borderRadius: size * 0.2237 }}
     >
-      <Video style={{ width: size * 0.5, height: size * 0.5 }} strokeWidth={2.2} fill="currentColor" />
+      <Video style={{ width: size * 0.48, height: size * 0.48 }} strokeWidth={2} fill="currentColor" />
     </span>
   );
 }
@@ -23,15 +23,34 @@ export function Logo() {
   );
 }
 
-/** Floating translucent navigation bar; content scrolls underneath it. */
+/** Full-width translucent navigation bar; content scrolls underneath it. */
 export function NavBar({ children }: { children?: React.ReactNode }) {
   return (
-    <header className="sticky top-3 z-30 mx-auto w-full max-w-6xl px-4">
-      <nav className="glass flex h-14 items-center justify-between rounded-full ps-4 pe-2">
+    <header className="sticky top-0 z-30 border-b border-separator bg-canvas/60 backdrop-blur-2xl backdrop-saturate-150">
+      <nav className="mx-auto flex h-14 max-w-[1120px] items-center justify-between px-5">
         <Logo />
         <div className="flex items-center gap-2">{children}</div>
       </nav>
     </header>
+  );
+}
+
+/** Eyebrow + headline + intro: the opening of every page section. */
+export function SectionHeader({
+  eyebrow, title, intro, align = 'center', as: Heading = 'h2',
+}: {
+  eyebrow?: string;
+  title: React.ReactNode;
+  intro?: React.ReactNode;
+  align?: 'center' | 'left';
+  as?: 'h1' | 'h2';
+}) {
+  return (
+    <div className={align === 'center' ? 'mx-auto max-w-2xl text-center' : 'max-w-2xl'}>
+      {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+      <Heading className="large-title text-silver mt-3 text-[clamp(2rem,4.5vw,3rem)]">{title}</Heading>
+      {intro && <p className="mt-4 text-pretty text-[17px] leading-relaxed text-label-2">{intro}</p>}
+    </div>
   );
 }
 
@@ -50,9 +69,9 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 const buttonVariants = {
-  filled: 'bg-tint text-white hover:brightness-110',
+  filled: 'bg-accent text-on-accent hover:bg-white',
   gray: 'bg-fill text-label hover:bg-fill-hover',
-  glass: 'glass-chip text-label hover:brightness-125',
+  glass: 'glass-chip text-label hover:bg-fill-hover',
   destructive: 'bg-red text-white hover:brightness-110',
 };
 const buttonSizes = {
@@ -103,22 +122,21 @@ export function Spinner({ className = '' }: { className?: string }) {
   );
 }
 
-const avatarGradients = [
-  'from-[#ff9f0a] to-[#ff375f]',
-  'from-[#64d2ff] to-[#0a84ff]',
-  'from-[#30d158] to-[#0c9f6f]',
-  'from-[#bf5af2] to-[#5e5ce6]',
-  'from-[#ffd60a] to-[#ff9f0a]',
-  'from-[#ff6482] to-[#bf5af2]',
+// Titanium finishes: natural, blue, desert, black. Distinct, but never loud.
+const avatarFinishes = [
+  'from-[#9a958e] to-[#4d4a46]',
+  'from-[#6f7a8c] to-[#2f3640]',
+  'from-[#a8927b] to-[#54473a]',
+  'from-[#5c5c61] to-[#232326]',
 ];
 
-/** Contact-style monogram with a stable gradient per name. */
+/** Contact-style monogram with a stable finish per name. */
 export function Avatar({ name, size = 40, className = '' }: { name: string; size?: number; className?: string }) {
   const hash = [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
   return (
     <span
       aria-hidden="true"
-      className={`inline-flex shrink-0 items-center justify-center rounded-full bg-gradient-to-b font-semibold text-white ${avatarGradients[hash % avatarGradients.length]} ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center rounded-full bg-gradient-to-b font-semibold text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.25)] ${avatarFinishes[hash % avatarFinishes.length]} ${className}`}
       style={{ width: size, height: size, fontSize: size * 0.42 }}
     >
       {name.trim()[0]?.toUpperCase() ?? '?'}
@@ -126,11 +144,14 @@ export function Avatar({ name, size = 40, className = '' }: { name: string; size
   );
 }
 
-/** Settings-style colored squircle holding a glyph. */
-export function IconTile({ icon: Icon, className }: { icon: React.ElementType; className: string }) {
+/** Monochrome glass tile holding a glyph. */
+export function IconTile({ icon: Icon, className = '' }: { icon: React.ElementType; className?: string }) {
   return (
-    <span aria-hidden="true" className={`inline-flex h-10 w-10 items-center justify-center rounded-[10px] text-white ${className}`}>
-      <Icon className="h-5 w-5" strokeWidth={2} />
+    <span
+      aria-hidden="true"
+      className={`inline-flex h-11 w-11 items-center justify-center rounded-[12px] bg-fill text-label shadow-[inset_0_1px_0_rgb(255_255_255/0.12),inset_0_0_0_1px_rgb(255_255_255/0.06)] ${className}`}
+    >
+      <Icon className="h-5 w-5" strokeWidth={1.75} />
     </span>
   );
 }

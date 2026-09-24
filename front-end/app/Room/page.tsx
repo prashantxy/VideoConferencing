@@ -405,7 +405,7 @@ export default function RoomPage() {
         />
 
         {connected && !partnerMedia.video && partner && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-[#1c1c1e] to-black" style={{ paddingRight: sidePad }}>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-[#141416] to-black" style={{ paddingRight: sidePad }}>
             <Avatar name={partner} size={128} />
             <p className="text-[22px] font-semibold">{partner}</p>
             <p className="-mt-3 text-[15px] text-label-2">Camera off</p>
@@ -417,8 +417,8 @@ export default function RoomPage() {
             <div className="relative flex h-28 w-28 items-center justify-center">
               {!failed && (
                 <>
-                  <span className="pulse-ring absolute inset-0 rounded-full bg-tint/35" />
-                  <span className="pulse-ring absolute inset-0 rounded-full bg-tint/35" style={{ animationDelay: "1s" }} />
+                  <span className="pulse-ring absolute inset-0 rounded-full bg-white/10" />
+                  <span className="pulse-ring absolute inset-0 rounded-full bg-white/10" style={{ animationDelay: "1s" }} />
                 </>
               )}
               {phase === "matched" && partner ? (
@@ -464,7 +464,7 @@ export default function RoomPage() {
       </div>
 
       {/* Top bar */}
-      <header className="absolute inset-x-3 top-3 z-20 flex items-center justify-between gap-3">
+      <header className="absolute inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <button
             onClick={() => router.push("/Dashboard")}
@@ -495,8 +495,8 @@ export default function RoomPage() {
       )}
 
       {/* Controls: 8px inset in a 64px capsule keeps the radii concentric. */}
-      <div className="absolute bottom-5 left-0 z-20 flex justify-center px-3" style={{ right: sidePad }}>
-        <div className="glass-chip flex items-center gap-2 rounded-full p-2">
+      <div className="absolute bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-0 z-20 flex justify-center px-3" style={{ right: sidePad }}>
+        <div className="glass-chip flex items-center gap-1.5 rounded-full p-1.5 sm:gap-2 sm:p-2">
           <RoundToggle on={media.audioOn} onClick={media.toggleAudio} labelOn="Mute" labelOff="Unmute" shortcut="M" iconOn={Mic} iconOff={MicOff} />
           <RoundToggle on={media.videoOn} onClick={media.toggleVideo} labelOn="Turn camera off" labelOff="Turn camera on" shortcut="V" iconOn={Video} iconOff={VideoOff} />
           <button
@@ -504,7 +504,7 @@ export default function RoomPage() {
             aria-label={chatOpen ? "Hide messages" : unread ? `Show messages, ${unread} unread` : "Show messages"}
             aria-pressed={chatOpen}
             title="Messages"
-            className={`pressable relative flex h-12 w-12 items-center justify-center rounded-full ${chatOpen ? "bg-white text-black" : "bg-fill hover:bg-fill-hover"}`}
+            className={`pressable relative flex size-11 items-center justify-center rounded-full sm:size-12 ${chatOpen ? "bg-accent text-on-accent" : "bg-fill hover:bg-fill-hover"}`}
           >
             <MessageCircle className="h-5 w-5" />
             {unread > 0 && (
@@ -517,7 +517,7 @@ export default function RoomPage() {
             onClick={next}
             disabled={phase === "connecting"}
             title="Next person (Esc)"
-            className="pressable flex h-12 items-center gap-2 rounded-full bg-tint ps-5 pe-6 text-[17px] font-semibold text-white hover:brightness-110 disabled:opacity-40"
+            className="pressable flex h-11 items-center gap-2 rounded-full bg-accent ps-4 pe-5 text-[17px] font-semibold text-on-accent hover:bg-white disabled:opacity-40 sm:h-12 sm:ps-5 sm:pe-6"
           >
             <SkipForward className="h-5 w-5" fill="currentColor" />
             {phase === "stopped" ? "Start" : "Next"}
@@ -527,7 +527,7 @@ export default function RoomPage() {
               onClick={stop}
               aria-label="Stop chatting"
               title="Stop chatting"
-              className="pressable flex h-12 w-12 items-center justify-center rounded-full bg-red text-white hover:brightness-110"
+              className="pressable flex size-11 items-center justify-center rounded-full bg-red text-white hover:brightness-110 sm:size-12"
             >
               <PhoneOff className="h-5 w-5" />
             </button>
@@ -539,7 +539,7 @@ export default function RoomPage() {
       <aside
         aria-label="Messages"
         inert={!chatOpen}
-        className={`glass-thick absolute inset-x-3 bottom-[96px] top-[68px] z-30 flex flex-col rounded-[28px] transition-[transform,opacity] duration-[350ms] ease-[var(--ease-drawer)] lg:inset-x-auto lg:bottom-3 lg:right-3 lg:w-[372px] motion-reduce:transition-opacity ${
+        className={`glass-thick absolute inset-x-3 bottom-[calc(88px+env(safe-area-inset-bottom))] top-[calc(68px+env(safe-area-inset-top))] z-30 flex flex-col rounded-[28px] transition-[transform,opacity] duration-[350ms] ease-[var(--ease-drawer)] lg:inset-x-auto lg:bottom-3 lg:right-3 lg:w-[372px] motion-reduce:transition-opacity ${
           chatOpen ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-[calc(100%+24px)] opacity-0 motion-reduce:translate-x-0"
         }`}
       >
@@ -568,7 +568,7 @@ export default function RoomPage() {
               <div key={m.id} className={`bubble flex ${m.from === "me" ? "justify-end" : "justify-start"}`}>
                 <p
                   className={`max-w-[78%] whitespace-pre-wrap break-words rounded-[18px] px-3.5 py-2 text-[15px] leading-snug ${
-                    m.from === "me" ? "rounded-br-[6px] bg-tint text-white" : "rounded-bl-[6px] bg-fill text-label"
+                    m.from === "me" ? "rounded-br-[6px] bg-accent text-on-accent" : "rounded-bl-[6px] bg-fill text-label"
                   }`}
                 >
                   {m.text}
@@ -603,7 +603,7 @@ export default function RoomPage() {
               type="submit"
               disabled={!draft.trim() || phase !== "matched"}
               aria-label="Send"
-              className="pressable flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-tint text-white disabled:bg-fill disabled:text-label-3"
+              className="pressable flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent disabled:bg-fill disabled:text-label-3"
             >
               <ArrowUp className="h-5 w-5" strokeWidth={2.5} />
             </button>
@@ -633,7 +633,7 @@ function RoundToggle({
       aria-pressed={!on}
       aria-keyshortcuts={shortcut}
       title={`${label} (${shortcut})`}
-      className={`pressable flex h-12 w-12 items-center justify-center rounded-full ${on ? "bg-fill hover:bg-fill-hover" : "bg-white text-black"}`}
+      className={`pressable flex size-11 items-center justify-center rounded-full sm:size-12 ${on ? "bg-fill hover:bg-fill-hover" : "bg-accent text-on-accent"}`}
     >
       {on ? <IconOn className="h-5 w-5" /> : <IconOff className="h-5 w-5" />}
     </button>

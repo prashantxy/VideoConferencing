@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { IntroLoader } from "@/components/Loader";
 
 // Apple platforms render SF Pro via the system stack; Inter is the fallback elsewhere.
 const inter = Inter({
@@ -14,20 +15,26 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#eef0f6" },
-    { media: "(prefers-color-scheme: dark)", color: "#000000" },
-  ],
+  themeColor: "#050506",
+  viewportFit: "cover",
 };
-
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Decide before first paint whether the intro plays (once per session, never on a call). */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){var d=document.documentElement;d.classList.add('js');try{var seen=sessionStorage.getItem('vm-intro');d.dataset.intro=(seen||location.pathname.indexOf('/Room')===0)?'done':'play'}catch(e){d.dataset.intro='done'}})()`,
+          }}
+        />
+      </head>
       <body className={`${inter.variable} antialiased`}>
+        <IntroLoader />
         {children}
       </body>
     </html>

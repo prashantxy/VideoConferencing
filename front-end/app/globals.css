@@ -1,83 +1,35 @@
 @import "tailwindcss";
 
 /*
- * Apple-style system tokens. Labels, fills and tints follow the iOS/macOS
- * semantic colors; glass materials get thicker as surfaces get bigger.
+ * "Space black & titanium": a near-monochrome dark system. Color is reserved
+ * for meaning (live, end call); hierarchy comes from light, glass and type.
  */
-:root {
-  --canvas: #eef0f6;
-  --label: rgb(0 0 0 / 0.88);
-  --label-2: rgb(60 60 67 / 0.74);
-  --label-3: rgb(60 60 67 / 0.5);
-  --fill: rgb(120 120 128 / 0.12);
-  --fill-hover: rgb(120 120 128 / 0.2);
-  --separator: rgb(60 60 67 / 0.14);
-  --tint: #007aff;
-  --green: #34c759;
-  --red: #ff3b30;
-  --on-tint: #fff;
+:root,
+.theme-dark {
+  --canvas: #050506;
+  --surface: #0d0d0f;
+  --label: #f5f5f7;
+  --label-2: rgb(245 245 247 / 0.64);
+  --label-3: rgb(245 245 247 / 0.4);
+  --fill: rgb(255 255 255 / 0.08);
+  --fill-hover: rgb(255 255 255 / 0.13);
+  --separator: rgb(255 255 255 / 0.09);
+  --accent: #f5f5f7;
+  --on-accent: #0a0a0b;
+  --tint: #2997ff;
+  --champagne: #d9c7a7;
+  --green: #30d158;
+  --red: #ff453a;
 
-  --glass: rgb(255 255 255 / 0.52);
-  --glass-thick: rgb(255 255 255 / 0.66);
-  --glass-stroke: rgb(255 255 255 / 0.7);
-  --glass-edge: rgb(0 0 0 / 0.06);
-  --glass-shadow: 0 1px 1px rgb(0 0 0 / 0.04), 0 8px 24px -6px rgb(30 40 80 / 0.14), 0 24px 64px -12px rgb(30 40 80 / 0.16);
-  --field: rgb(255 255 255 / 0.62);
-
-  --wall-1: #b9d4ff;
-  --wall-2: #f5c8ff;
-  --wall-3: #bff3e6;
-  --wall-4: #ffd9b8;
+  --glass: rgb(255 255 255 / 0.045);
+  --glass-thick: rgb(22 22 25 / 0.62);
+  --glass-stroke: rgb(255 255 255 / 0.13);
+  --glass-edge: rgb(255 255 255 / 0.06);
+  --glass-shadow: 0 30px 80px -24px rgb(0 0 0 / 0.85);
+  --field: rgb(255 255 255 / 0.06);
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --canvas: #000;
-    --label: rgb(255 255 255 / 0.96);
-    --label-2: rgb(235 235 245 / 0.66);
-    --label-3: rgb(235 235 245 / 0.42);
-    --fill: rgb(120 120 128 / 0.28);
-    --fill-hover: rgb(120 120 128 / 0.4);
-    --separator: rgb(84 84 88 / 0.55);
-    --tint: #0a84ff;
-    --green: #30d158;
-    --red: #ff453a;
-
-    --glass: rgb(38 38 44 / 0.46);
-    --glass-thick: rgb(28 28 32 / 0.6);
-    --glass-stroke: rgb(255 255 255 / 0.14);
-    --glass-edge: rgb(0 0 0 / 0.3);
-    --glass-shadow: 0 1px 1px rgb(0 0 0 / 0.2), 0 12px 32px -8px rgb(0 0 0 / 0.5), 0 32px 80px -16px rgb(0 0 0 / 0.6);
-    --field: rgb(118 118 128 / 0.24);
-
-    --wall-1: #1b3a8f;
-    --wall-2: #5a1f7a;
-    --wall-3: #0d5c55;
-    --wall-4: #7a3a1a;
-  }
-}
-
-/* The call room is always dark, like FaceTime. */
-.theme-dark {
-  --canvas: #000;
-  --label: rgb(255 255 255 / 0.96);
-  --label-2: rgb(235 235 245 / 0.7);
-  --label-3: rgb(235 235 245 / 0.45);
-  --fill: rgb(255 255 255 / 0.14);
-  --fill-hover: rgb(255 255 255 / 0.22);
-  --separator: rgb(255 255 255 / 0.14);
-  --tint: #0a84ff;
-  --green: #30d158;
-  --red: #ff453a;
-  --glass: rgb(30 30 34 / 0.5);
-  --glass-thick: rgb(24 24 28 / 0.62);
-  --glass-stroke: rgb(255 255 255 / 0.16);
-  --glass-edge: rgb(0 0 0 / 0.3);
-  --glass-shadow: 0 1px 1px rgb(0 0 0 / 0.2), 0 12px 32px -8px rgb(0 0 0 / 0.5), 0 32px 80px -16px rgb(0 0 0 / 0.6);
-  --field: rgb(255 255 255 / 0.1);
   color-scheme: dark;
 }
 
@@ -90,6 +42,10 @@
   --color-fill-hover: var(--fill-hover);
   --color-separator: var(--separator);
   --color-tint: var(--tint);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-champagne: var(--champagne);
+  --color-surface: var(--surface);
   --color-green: var(--green);
   --color-red: var(--red);
   --color-field: var(--field);
@@ -98,7 +54,7 @@
 }
 
 html {
-  color-scheme: light dark;
+  color-scheme: dark;
 }
 
 body {
@@ -109,7 +65,7 @@ body {
 }
 
 ::selection {
-  background: color-mix(in oklab, var(--tint) 35%, transparent);
+  background: rgb(217 199 167 / 0.35);
 }
 
 /* ---------- Wallpaper: soft color fields for the glass to refract ---------- */
@@ -118,11 +74,16 @@ body {
   inset: 0;
   z-index: -1;
   background:
-    radial-gradient(40% 50% at 12% 18%, var(--wall-1), transparent 70%),
-    radial-gradient(38% 46% at 88% 12%, var(--wall-2), transparent 70%),
-    radial-gradient(44% 50% at 78% 88%, var(--wall-3), transparent 70%),
-    radial-gradient(36% 42% at 18% 92%, var(--wall-4), transparent 70%),
+    radial-gradient(70% 50% at 50% -8%, rgb(217 199 167 / 0.14), transparent 70%),
+    radial-gradient(40% 35% at 88% 28%, rgb(96 116 156 / 0.1), transparent 70%),
+    radial-gradient(45% 40% at 8% 78%, rgb(217 199 167 / 0.05), transparent 70%),
     var(--canvas);
+}
+
+/* A soft pool of light behind a hero object. */
+.spotlight {
+  background: radial-gradient(50% 50% at 50% 50%, rgb(217 199 167 / 0.18), rgb(96 116 156 / 0.06) 45%, transparent 72%);
+  filter: blur(20px);
 }
 
 /* ---------- Materials ---------- */
@@ -179,7 +140,7 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--tint);
+  outline: 2px solid var(--label);
   outline-offset: 2px;
 }
 
@@ -230,10 +191,32 @@ body {
 /* ---------- Type ---------- */
 .large-title {
   font-family: var(--font-display);
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  line-height: 1.08;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.06;
   text-wrap: balance;
+}
+
+/* Brushed-silver headline fill. */
+.text-silver {
+  background: linear-gradient(180deg, #ffffff 30%, #a1a1a6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.text-titanium {
+  background: linear-gradient(100deg, #d9c7a7 0%, #f5f5f7 45%, #9aa3b2 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.eyebrow {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--champagne);
 }
 
 .tabular { font-variant-numeric: tabular-nums; }
@@ -248,3 +231,44 @@ body {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* ---------- Loaders & GSAP reveal ---------- */
+.intro {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(45% 40% at 50% 45%, rgb(217 199 167 / 0.1), transparent 70%),
+    var(--canvas);
+}
+html:not([data-intro="play"]):not([data-intro="lifting"]) .intro { display: none; }
+
+/* Hidden until GSAP reveals them; only when JS is running. */
+.js [data-reveal] { visibility: hidden; }
+
+.activity {
+  position: relative;
+  display: inline-block;
+  animation: activity-spin 0.8s steps(8) infinite;
+}
+.activity > span {
+  position: absolute;
+  left: 46%;
+  top: 0;
+  width: 8%;
+  height: 28%;
+  border-radius: 999px;
+  background: currentColor;
+  transform-origin: 50% 178%;
+}
+@keyframes activity-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .activity { animation: activity-fade 1.6s ease-in-out infinite; }
+}
+@keyframes activity-fade { 50% { opacity: 0.4; } }
+
+/* Rolling city: only the first name shows until GSAP takes over (and always, with reduced motion). */
+.city-word:not(:nth-child(2)) { transform: translateY(115%); }

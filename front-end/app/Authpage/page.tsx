@@ -3,8 +3,11 @@
 import React, { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, Eye, EyeOff } from 'lucide-react';
-import { AppIcon, Button, FieldRow, Group, Spinner } from '@/components/ui';
+import { AppIcon, Button, FieldRow, Group, Logo } from '@/components/ui';
+import { ChatterWall } from '@/components/ChatterWall';
+import { ActivityIndicator } from '@/components/Loader';
 import { api, session, User } from '@/lib/api';
+import { gsap, MOTION_OK, MOTION_REDUCED, revealAll, useGSAP, whenIntroDone } from '@/lib/gsap';
 
 type Mode = 'signin' | 'signup';
 
@@ -20,7 +23,7 @@ function SegmentedControl({ value, onChange }: { value: Mode; onChange: (m: Mode
       {/* Thumb slides between segments; 2px inset keeps its radius concentric (10 = 8 + 2). */}
       <span
         aria-hidden="true"
-        className="absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-[8px] bg-white shadow-[0_3px_8px_rgb(0_0_0/0.12),0_3px_1px_rgb(0_0_0/0.04)] transition-transform duration-200 ease-[var(--ease-out)] dark:bg-[#636366]"
+        className="absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-[8px] bg-white/[0.16] shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_3px_8px_rgb(0_0_0/0.35)] transition-transform duration-200 ease-[var(--ease-out)]"
         style={{ transform: value === 'signup' ? 'translateX(100%)' : 'none' }}
       />
       {options.map((o) => (
@@ -47,6 +50,40 @@ function AuthForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const errorRef = useRef<HTMLParagraphElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const firstRender = useRef(true);
+
+  useGSAP(
+    () => {
+      const mm = gsap.matchMedia();
+      mm.add(MOTION_OK, () => {
+        const tl = gsap.timeline({ paused: true });
+        tl.from('.auth-visual', { autoAlpha: 0, scale: 1.04, duration: 1.8, ease: 'power2.out' })
+          .from('.auth-visual-copy > *', { autoAlpha: 0, y: 24, filter: 'blur(8px)', duration: 1.2, stagger: 0.1 }, 0.3)
+          .from('.auth-back', { autoAlpha: 0, x: -12, duration: 0.8 }, 0.2)
+          .from('.auth-card', { autoAlpha: 0, x: 24, filter: 'blur(10px)', duration: 1.2 }, 0.15)
+          .from('.auth-card .auth-item', { autoAlpha: 0, y: 16, duration: 0.9, stagger: 0.06 }, 0.35)
+          .from('.auth-foot', { autoAlpha: 0, duration: 1 }, 0.7);
+        return whenIntroDone(() => tl.play());
+      });
+      mm.add(MOTION_REDUCED, () => revealAll(root.current));
+    },
+    { scope: root },
+  );
+
+  // Rows ripple in when switching between Sign In and Create Account.
+  useGSAP(
+    () => {
+      if (firstRender.current) {
+        firstRender.current = false;
+        return;
+      }
+      if (window.matchMedia(MOTION_REDUCED).matches) return;
+      gsap.from('.auth-card label', { autoAlpha: 0, y: 8, duration: 0.5, stagger: 0.04, ease: 'power3.out' });
+      gsap.from('.auth-title', { autoAlpha: 0, y: 6, filter: 'blur(4px)', duration: 0.5, ease: 'power3.out' });
+    },
+    { scope: root, dependencies: [mode] },
+  );
 
   useEffect(() => {
     if (session.token() && session.user()) router.replace('/Dashboard');
@@ -85,32 +122,55 @@ function AuthForm() {
   const signup = mode === 'signup';
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center px-4 py-10">
+    <div ref={root} className="grid min-h-dvh lg:grid-cols-[1.15fr_1fr]">
       <div className="wallpaper" />
 
-      <div className="w-full max-w-[420px]">
-        <button
-          onClick={() => router.push('/')}
-          className="pressable mb-4 inline-flex h-11 items-center gap-0.5 rounded-full pe-3 text-[17px] text-tint"
-        >
-          <ChevronLeft className="h-6 w-6" /> Home
-        </button>
+      {/* ── Visual side: the same live wall as the home page ── */}
+      <aside
+        data-reveal
+        className="auth-visual relative isolate flex h-[38svh] min-h-64 flex-col justify-between overflow-hidden border-b border-separator p-5 sm:p-8 lg:sticky lg:top-0 lg:h-dvh lg:border-b-0 lg:border-r lg:p-12"
+      >
+        <ChatterWall vignette="bottom" />
+        <Logo />
+        <div className="auth-visual-copy max-w-md">
+          <p className="inline-flex items-center gap-2 text-[13px] font-medium text-label-2">
+            <span className="live-dot h-1.5 w-1.5 rounded-full bg-green" aria-hidden="true" /> Live conversations, right now
+          </p>
+          <p className="large-title text-silver mt-3 text-[clamp(1.75rem,3.6vw,3.25rem)]">
+            Somebody’s waiting to say hi.
+          </p>
+          <p className="mt-3 hidden text-pretty text-[17px] leading-relaxed text-label-2 sm:block">
+            One-on-one video with someone new. Peer to peer, and gone the moment you tap Next.
+          </p>
+        </div>
+      </aside>
 
-        <main className="glass-thick materialize rounded-[32px] p-6 sm:p-8">
-          <div className="flex flex-col items-center text-center">
-            <AppIcon size={64} />
-            <h1 className="large-title mt-5 text-[28px]">{signup ? 'Create your account' : 'Sign in to VideoMeet'}</h1>
-            <p className="mt-1.5 text-[15px] text-label-2">
-              {signup ? 'It takes less than a minute.' : 'Use your username or email.'}
+      {/* ── Form side ── */}
+      <div className="flex flex-col px-5 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-4 sm:px-10 lg:px-16 lg:py-10">
+        <div data-reveal className="auth-back self-start">
+          <button
+            onClick={() => router.push('/')}
+            className="pressable inline-flex h-11 items-center gap-0.5 rounded-full pe-3 text-[17px] text-tint"
+          >
+            <ChevronLeft className="h-6 w-6" /> Home
+          </button>
+        </div>
+
+        <main data-reveal className="auth-card my-auto w-full max-w-[400px] py-6 lg:py-8">
+          <div className="auth-item">
+            <span className="hidden lg:block"><AppIcon size={52} /></span>
+            <h1 className="auth-title large-title text-silver lg:mt-6 text-[clamp(1.875rem,3vw,2.25rem)]">{signup ? 'Create your account' : 'Welcome back'}</h1>
+            <p className="mt-2 text-[15px] text-label-2">
+              {signup ? 'It takes less than a minute.' : 'Sign in with your username or email.'}
             </p>
           </div>
 
-          <div className="mt-7">
+          <div className="auth-item mt-8">
             <SegmentedControl value={mode} onChange={switchMode} />
           </div>
 
           <form onSubmit={onSubmit} className="mt-5">
-            <Group>
+            <Group className="auth-item">
               {signup && (
                 <>
                   <FieldRow label="Name" name="name" value={form.name} onChange={onChange} autoComplete="name" required minLength={2} placeholder="Ada Lovelace" aria-invalid={!!error || undefined} />
@@ -168,14 +228,16 @@ function AuthForm() {
               {error}
             </p>
 
-            <Button type="submit" size="lg" disabled={loading} className="mt-6 w-full">
-              {loading && <Spinner />}
-              {signup ? 'Create Account' : 'Sign In'}
-            </Button>
+            <div className="auth-item mt-6">
+              <Button type="submit" size="lg" disabled={loading} className="w-full">
+                {loading && <ActivityIndicator size={18} label="Signing in" />}
+                {signup ? 'Create Account' : 'Sign In'}
+              </Button>
+            </div>
           </form>
         </main>
 
-        <p className="mt-6 text-center text-[13px] text-label-3">
+        <p data-reveal className="auth-foot text-[13px] text-label-3">
           By continuing you agree to be kind to strangers.
         </p>
       </div>
