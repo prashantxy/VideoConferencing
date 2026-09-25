@@ -74,10 +74,11 @@ router.post('/signin', async (req, res) => {
     });
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const isValid = await bcrypt.compare(password, user.password);
+    // Google-only accounts have no password.
+    const isValid = user.password !== null && (await bcrypt.compare(password, user.password));
     if (!isValid) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const { password: _, ...userSafe } = user;
+    const { password: _, googleId: __, ...userSafe } = user;
     return res.json({ message: 'Signin successful', token: signToken(user.id), user: userSafe });
   } catch (err) {
     console.error(err);

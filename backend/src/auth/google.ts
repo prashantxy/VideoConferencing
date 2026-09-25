@@ -1,0 +1,129 @@
+import { Router, Response } from 'express';
+import crypto from 'crypto';
+import { prisma } from '../prisma';
+import { config } from '../config';
+import { signToken } from './jwt';
+
+// Authorization-code flow: /auth/google sends the browser to Google, Google
+// sends it back to /auth/google/callback, and we hand our own JWT to the
+// front-end in the URL fragment (never sent to any server).
+
+const router = Router();
+
+const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
+const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
+const STATE_COOKIE = 'g_oauth_state';
+
+interface GoogleProfile {
+  sub: string;
+  email?: string;
+  email_verified?: boolean;
+  name?: string;
+}
+
+const configured = () => Boolean(config.google.clientId && config.google.clientSecret);
+
+function backToFrontend(res: Response, params: Record<string, string>) {
+  res.clearCookie(STATE_COOKIE, { path: '/auth/google' });
+  res.redirect(`${config.frontendUrl}/Authpage#${new URLSearchParams(params)}`);
+}
+
+function readCookie(header: string | undefined, name: string): string | null {
+  for (const part of (header ?? '').split(';')) {
+    const [k, ...v] = part.trim().split('=');
+    if (k === name) return decodeURIComponent(v.join('='));
+  }
+  return null;
+}
+
+/** Derives a unique username from the email's local part, e.g. ada_l, ada_l1, ... */
+async function uniqueUsername(email: string): Promise<string> {
+  const base = (email.split('@')[0].replace(/[^a-zA-Z0-9_.]/g, '').slice(0, 20) || 'user').padEnd(3, '0');
+  for (let i = 0; i < 50; i++) {
+    const candidate = i === 0 ? base : `${base}${i}`;
+    if (!(await prisma.user.findUnique({ where: { username: candidate } }))) return candidate;
+  }
+  return `${base}${crypto.randomBytes(3).toString('hex')}`;
+}
+
+router.get('/', (req, res) => {
+  if (!configured()) return res.status(503).json({ error: 'Google sign-in is not configured' });
+
+  const state = crypto.randomBytes(16).toString('hex');
+  res.cookie(STATE_COOKIE, state, {
+    httpOnly: true,
+    secure: config.google.redirectUri.startsWith('https://'),
+    sameSite: 'lax',
+    maxAge: 10 * 60 * 1000,
+    path: '/auth/google',
+  });
+
+  const params = new URLSearchParams({
+    client_id: config.google.clientId,
+    redirect_uri: config.google.redirectUri,
+    response_type: 'code',
+    scope: 'openid email profile',
+    state,
+    prompt: 'select_account',
+  });
+  res.redirect(`${AUTH_URL}?${params}`);
+});
+
+router.get('/callback', async (req, res) => {
+  const { code, state, error } = req.query;
+  if (error) return backToFrontend(res, { error: 'Google sign-in was cancelled' });
+
+  const expected = readCookie(req.headers.cookie, STATE_COOKIE);
+  if (typeof code !== 'string' || typeof state !== 'string' || !expected || state !== expected) {
+    return backToFrontend(res, { error: 'Google sign-in expired, please try again' });
+  }
+
+  try {
+    const tokenRes = await fetch(TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: config.google.clientId,
+        client_secret: config.google.clientSecret,
+        redirect_uri: config.google.redirectUri,
+        grant_type: 'authorization_code',
+      }),
+    });
+    if (!tokenRes.ok) throw new Error(`Token exchange failed: ${tokenRes.status} ${await tokenRes.text()}`);
+    const { access_token } = (await tokenRes.json()) as { access_token: string };
+
+    const profileRes = await fetch(USERINFO_URL, { headers: { Authorization: `Bearer ${access_token}` } });
+    if (!profileRes.ok) throw new Error(`Userinfo failed: ${profileRes.status}`);
+    const profile = (await profileRes.json()) as GoogleProfile;
+
+    if (!profile.email || !profile.email_verified) {
+      return backToFrontend(res, { error: 'Your Google account has no verified email' });
+    }
+    const email = profile.email.toLowerCase();
+
+    let user = await prisma.user.findUnique({ where: { googleId: profile.sub } });
+    if (!user) {
+      const byEmail = await prisma.user.findUnique({ where: { email } });
+      user = byEmail
+        // Google has verified this address, so link it to the existing account.
+        ? await prisma.user.update({ where: { id: byEmail.id }, data: { googleId: profile.sub } })
+        : await prisma.user.create({
+            data: {
+              googleId: profile.sub,
+              email,
+              name: (profile.name ?? email.split('@')[0]).slice(0, 50),
+              username: await uniqueUsername(email),
+            },
+          });
+    }
+
+    return backToFrontend(res, { token: signToken(user.id) });
+  } catch (err) {
+    console.error(err);
+    return backToFrontend(res, { error: 'Google sign-in failed, please try again' });
+  }
+});
+
+export default router;

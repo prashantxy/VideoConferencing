@@ -6,7 +6,7 @@ import { ChevronLeft, Eye, EyeOff } from 'lucide-react';
 import { AppIcon, Button, FieldRow, Group, Logo } from '@/components/ui';
 import { ChatterWall } from '@/components/ChatterWall';
 import { ActivityIndicator } from '@/components/Loader';
-import { api, session, User } from '@/lib/api';
+import { API_URL, api, session, User } from '@/lib/api';
 import { gsap, MOTION_OK, MOTION_REDUCED, revealAll, useGSAP, whenIntroDone } from '@/lib/gsap';
 
 type Mode = 'signin' | 'signup';
@@ -38,6 +38,17 @@ function SegmentedControl({ value, onChange }: { value: Mode; onChange: (m: Mode
         </button>
       ))}
     </div>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 48 48" className="h-[18px] w-[18px]">
+      <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z" />
+      <path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" />
+      <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z" />
+      <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z" />
+    </svg>
   );
 }
 
@@ -86,6 +97,30 @@ function AuthForm() {
   );
 
   useEffect(() => {
+    // Returning from Google: the backend puts our token (or an error) in the fragment.
+    const hash = new URLSearchParams(window.location.hash.slice(1));
+    const token = hash.get('token');
+    const oauthError = hash.get('error');
+    if (token || oauthError) window.history.replaceState(null, '', window.location.pathname + window.location.search);
+
+    if (token) {
+      setLoading(true);
+      fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => (r.ok ? r.json() : Promise.reject()))
+        .then(({ user }: { user: User }) => {
+          session.save(token, user);
+          router.replace('/Dashboard');
+        })
+        .catch(() => {
+          setError('Google sign-in failed, please try again');
+          setLoading(false);
+        });
+      return;
+    }
+    if (oauthError) {
+      setError(oauthError);
+      return;
+    }
     if (session.token() && session.user()) router.replace('/Dashboard');
   }, [router]);
 
@@ -235,6 +270,26 @@ function AuthForm() {
               </Button>
             </div>
           </form>
+
+          <div className="auth-item mt-6 flex items-center gap-3 text-[13px] text-label-3" aria-hidden="true">
+            <span className="h-px flex-1 bg-separator" /> or <span className="h-px flex-1 bg-separator" />
+          </div>
+
+          <div className="auth-item mt-6">
+            <Button
+              type="button"
+              variant="gray"
+              size="lg"
+              disabled={loading}
+              className="w-full"
+              onClick={() => {
+                setLoading(true);
+                window.location.href = `${API_URL}/auth/google`;
+              }}
+            >
+              <GoogleIcon /> Continue with Google
+            </Button>
+          </div>
         </main>
 
         <p data-reveal className="auth-foot text-[13px] text-label-3">

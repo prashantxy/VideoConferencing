@@ -6,6 +6,7 @@ import { config } from './config';
 import { UserManager } from './managers/UserManager';
 import { verifyToken } from './auth/jwt';
 import authRouter from './auth/auth';
+import googleRouter from './auth/google';
 import usersRouter from './routes/users';
 
 const app = express();
@@ -34,6 +35,7 @@ app.use(cors({
 app.use(express.json({ limit: '100kb' }));
 
 app.use('/auth', authRouter);
+app.use('/auth/google', googleRouter);
 app.use('/users', usersRouter);
 
 const userManager = new UserManager();

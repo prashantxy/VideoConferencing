@@ -15,7 +15,9 @@ model user {
   name      String
   email     String   @unique
   username  String   @unique
-  password  String
+  // Null for accounts created through Google sign-in.
+  password  String?
+  googleId  String?  @unique
   createdAt DateTime @default(now())
   calls     call[]
 }
