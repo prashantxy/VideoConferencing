@@ -5,6 +5,7 @@ import { Server, Socket } from 'socket.io';
 import { config } from './config';
 import { UserManager } from './managers/UserManager';
 import { verifyToken } from './auth/jwt';
+import { onEvent } from './managers/events';
 import authRouter from './auth/auth';
 import googleRouter from './auth/google';
 import usersRouter from './routes/users';
@@ -60,9 +61,7 @@ io.use((socket, next) => {
 });
 
 io.on('connection', (socket: Socket) => {
-  socket.on("ready", (payload: unknown) => {
-    const raw = typeof payload === 'string' ? payload : (payload as { name?: unknown })?.name;
-    const name = typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, 40) : "Guest";
+  onEvent(socket, "ready", (name) => {
     userManager.addUser(name, socket);
     broadcastOnline();
   });

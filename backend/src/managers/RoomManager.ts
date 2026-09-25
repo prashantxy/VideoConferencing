@@ -41,8 +41,8 @@ export class RoomManager {
     }
 
     /** Forwards a signaling/chat event to the other member of the sender's room. */
-    relay(senderSocketId: string, roomId: unknown, event: string, payload: object) {
-        const room = typeof roomId === "string" ? this.rooms.get(roomId) : undefined;
+    relay(senderSocketId: string, roomId: string, event: string, payload: object) {
+        const room = this.rooms.get(roomId);
         if (!room) return;
         const partner = this.partnerIn(room, senderSocketId);
         if (!partner) return;

@@ -1,7 +1,6 @@
 import { Socket } from "socket.io";
 import { RoomManager } from "./RoomManager";
-
-const MAX_CHAT_LENGTH = 500;
+import { onEvent } from "./events";
 
 export interface User {
     socket: Socket;
@@ -74,45 +73,41 @@ export class UserManager {
         }
     }
 
+    // Payloads are validated in ./events; invalid ones never reach these handlers.
     private initHandlers(socket: Socket) {
-        socket.on("offer", ({ sdp, roomId } = {}) => {
-            if (sdp && typeof sdp === "object") this.roomManager.relay(socket.id, roomId, "offer", { sdp });
+        onEvent(socket, "offer", ({ roomId, sdp }) => {
+            this.roomManager.relay(socket.id, roomId, "offer", { sdp });
         });
 
-        socket.on("answer", ({ sdp, roomId } = {}) => {
-            if (sdp && typeof sdp === "object") this.roomManager.relay(socket.id, roomId, "answer", { sdp });
+        onEvent(socket, "answer", ({ roomId, sdp }) => {
+            this.roomManager.relay(socket.id, roomId, "answer", { sdp });
         });
 
-        socket.on("add-ice-candidate", ({ candidate, roomId } = {}) => {
-            if (candidate && typeof candidate === "object") {
-                this.roomManager.relay(socket.id, roomId, "add-ice-candidate", { candidate });
-            }
+        onEvent(socket, "add-ice-candidate", ({ roomId, candidate }) => {
+            this.roomManager.relay(socket.id, roomId, "add-ice-candidate", { candidate });
         });
 
-        socket.on("media-state", ({ roomId, audio, video } = {}) => {
-            this.roomManager.relay(socket.id, roomId, "media-state", { audio: !!audio, video: !!video });
+        onEvent(socket, "media-state", ({ roomId, audio, video }) => {
+            this.roomManager.relay(socket.id, roomId, "media-state", { audio, video });
         });
 
-        socket.on("chat-message", ({ roomId, text } = {}) => {
-            if (typeof text !== "string") return;
-            const trimmed = text.trim().slice(0, MAX_CHAT_LENGTH);
-            if (!trimmed) return;
-            this.roomManager.relay(socket.id, roomId, "chat-message", { text: trimmed, ts: Date.now() });
+        onEvent(socket, "chat-message", ({ roomId, text }) => {
+            this.roomManager.relay(socket.id, roomId, "chat-message", { text, ts: Date.now() });
         });
 
-        socket.on("typing", ({ roomId, typing } = {}) => {
-            this.roomManager.relay(socket.id, roomId, "typing", { typing: !!typing });
+        onEvent(socket, "typing", ({ roomId, typing }) => {
+            this.roomManager.relay(socket.id, roomId, "typing", { typing });
         });
 
         // Skip the current partner and look for a new one.
-        socket.on("next", () => {
+        onEvent(socket, "next", () => {
             const partner = this.roomManager.endRoomFor(socket.id, "skipped");
             this.enqueue(socket.id);
             if (partner) this.enqueue(partner.socket.id);
         });
 
         // Stop chatting entirely (stay connected, but out of the queue).
-        socket.on("leave", () => {
+        onEvent(socket, "leave", () => {
             this.dequeue(socket.id);
             const partner = this.roomManager.endRoomFor(socket.id, "left");
             if (partner) this.enqueue(partner.socket.id);

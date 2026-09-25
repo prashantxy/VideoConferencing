@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import crypto from 'crypto';
+import { z } from 'zod';
 import { prisma } from '../prisma';
 import { config } from '../config';
 import { readCookie, setAuthCookie } from './jwt';
@@ -16,12 +17,20 @@ const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
 const STATE_COOKIE = 'g_oauth_state';
 
-interface GoogleProfile {
-  sub: string;
-  email?: string;
-  email_verified?: boolean;
-  name?: string;
-}
+// Google's redirect back to us: either { code, state } or { error }.
+const callbackQuery = z.union([
+  z.object({ code: z.string().min(1), state: z.string().regex(/^[0-9a-f]{32}$/) }),
+  z.object({ error: z.string() }),
+]);
+
+const tokenResponse = z.object({ access_token: z.string().min(1) });
+
+const googleProfile = z.object({
+  sub: z.string().min(1),
+  email: z.string().email().optional(),
+  email_verified: z.boolean().optional(),
+  name: z.string().optional(),
+});
 
 const configured = () => Boolean(config.google.clientId && config.google.clientSecret);
 
@@ -65,13 +74,14 @@ router.get('/', (req, res) => {
 });
 
 router.get('/callback', async (req, res) => {
-  const { code, state, error } = req.query;
-  if (error) return backToFrontend(res, { error: 'Google sign-in was cancelled' });
+  const query = callbackQuery.safeParse(req.query);
+  if (query.success && 'error' in query.data) return backToFrontend(res, { error: 'Google sign-in was cancelled' });
 
   const expected = readCookie(req.headers.cookie, STATE_COOKIE);
-  if (typeof code !== 'string' || typeof state !== 'string' || !expected || state !== expected) {
+  if (!query.success || !('code' in query.data) || !expected || query.data.state !== expected) {
     return backToFrontend(res, { error: 'Google sign-in expired, please try again' });
   }
+  const { code } = query.data;
 
   try {
     const tokenRes = await fetch(TOKEN_URL, {
@@ -86,11 +96,11 @@ router.get('/callback', async (req, res) => {
       }),
     });
     if (!tokenRes.ok) throw new Error(`Token exchange failed: ${tokenRes.status} ${await tokenRes.text()}`);
-    const { access_token } = (await tokenRes.json()) as { access_token: string };
+    const { access_token } = tokenResponse.parse(await tokenRes.json());
 
     const profileRes = await fetch(USERINFO_URL, { headers: { Authorization: `Bearer ${access_token}` } });
     if (!profileRes.ok) throw new Error(`Userinfo failed: ${profileRes.status}`);
-    const profile = (await profileRes.json()) as GoogleProfile;
+    const profile = googleProfile.parse(await profileRes.json());
 
     if (!profile.email || !profile.email_verified) {
       return backToFrontend(res, { error: 'Your Google account has no verified email' });
