@@ -1,0 +1,32 @@
+# Render Blueprint for the VibeCall backend (Express + Socket.IO).
+# Render dashboard → New → Blueprint → pick this repo. The front-end is deployed on Vercel.
+services:
+  - type: web
+    name: vibecall-api
+    runtime: node
+    rootDir: backend
+    # Free sleeps after 15 min idle (first request then takes ~1 min and live calls drop); starter stays up.
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    # Applies pending Prisma migrations on every deploy, then starts the server.
+    startCommand: npm run db:migrate && npm start
+    healthCheckPath: /stats
+    domains:
+      - api.vibecall.world
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        sync: false # paste your Neon/Postgres connection string when prompted
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        value: https://vibecall.world
+      - key: CORS_ORIGINS
+        value: https://vibecall.world,https://www.vibecall.world
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        value: https://vibecall.world/api/auth/google/callback

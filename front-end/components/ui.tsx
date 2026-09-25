@@ -18,7 +18,7 @@ export function Logo() {
   return (
     <Link href="/" className="pressable inline-flex items-center gap-2.5 rounded-xl">
       <AppIcon size={28} />
-      <span className="text-[17px] font-semibold tracking-[-0.01em]">VideoMeet</span>
+      <span className="text-[17px] font-semibold tracking-[-0.01em]">VibeCall</span>
     </Link>
   );
 }
@@ -167,7 +167,7 @@ export function SupportButton({ className = '' }: { className?: string }) {
       href={SUPPORT_URL}
       target="_blank"
       rel="noopener noreferrer"
-      aria-label="Support VideoMeet"
+      aria-label="Support VibeCall"
       className={`pressable inline-flex h-9 items-center gap-1.5 rounded-full bg-fill px-3 text-[15px] font-semibold text-label hover:bg-fill-hover sm:px-4 ${className}`}
     >
       <Heart className="h-4 w-4 text-red" fill="currentColor" />

@@ -7,7 +7,7 @@ if (!jwtSecret) {
   throw new Error('JWT_SECRET is not set. Copy .env.example to .env and fill it in.');
 }
 
-const allowedOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3001,https://video-conferencing-orpin-beta.vercel.app')
+const allowedOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3001,https://vibecall.world,https://www.vibecall.world')
   .split(',')
   .map((o) => o.trim())
   .filter(Boolean);

@@ -26,7 +26,7 @@ export function PageLoader({ label = 'Loading' }: { label?: string }) {
   );
 }
 
-const WORD = 'VideoMeet';
+const WORD = 'VibeCall';
 
 /**
  * Branded intro: icon materializes, the wordmark rises, a hairline fills,

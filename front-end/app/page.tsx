@@ -281,7 +281,7 @@ export default function HomePage() {
         </section>
 
         {/* ── Manifesto (pinned, scrubbed) ─────────────────── */}
-        <section aria-label="What VideoMeet is" className="manifesto flex min-h-svh items-center border-t border-separator">
+        <section aria-label="What VibeCall is" className="manifesto flex min-h-svh items-center border-t border-separator">
           <div className="mx-auto max-w-[1120px] px-5 py-24">
             <p className="eyebrow">What this is</p>
             <p className="manifesto-text large-title mt-6 max-w-4xl text-[clamp(1.875rem,5vw,3.75rem)] leading-[1.12]">{manifesto}</p>
@@ -418,13 +418,13 @@ export default function HomePage() {
             {SUPPORT_URL && (
               <div className="flex flex-col gap-2.5">
                 <p className="font-semibold text-label">Project</p>
-                <a href={SUPPORT_URL} target="_blank" rel="noopener noreferrer" className="text-label-2 hover:text-label">Support VideoMeet</a>
+                <a href={SUPPORT_URL} target="_blank" rel="noopener noreferrer" className="text-label-2 hover:text-label">Support VibeCall</a>
               </div>
             )}
           </nav>
         </div>
         <div className="mx-auto max-w-[1120px] border-t border-separator px-5 py-5 text-[12px] text-label-3">
-          © {new Date().getFullYear()} VideoMeet. Built on WebRTC.
+          © {new Date().getFullYear()} VibeCall. Built on WebRTC.
         </div>
       </footer>
     </div>

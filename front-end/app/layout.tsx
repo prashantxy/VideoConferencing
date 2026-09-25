@@ -10,7 +10,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "VideoMeet",
+  metadataBase: new URL("https://vibecall.world"),
+  title: "VibeCall",
   description: "One-on-one video conversations with someone new, peer to peer over WebRTC.",
 };
 
