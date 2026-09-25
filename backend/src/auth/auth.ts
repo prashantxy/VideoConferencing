@@ -2,7 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import { z } from 'zod';
 import { prisma } from '../prisma';
-import { AuthedRequest, clearAuthCookie, requireAuth, setAuthCookie, signSocketTicket } from './jwt';
+import { AUTH_COOKIE, AuthedRequest, clearAuthCookie, readCookie, requireAuth, setAuthCookie, signSocketTicket, verifySession } from './jwt';
 
 const router = Router();
 
@@ -49,11 +49,12 @@ router.post('/signup', async (req, res) => {
 
     const user = await prisma.user.create({
       data: { name, email, username, password: hashedPassword },
-      select: publicUser,
+      select: { ...publicUser, tokenVersion: true },
     });
 
-    setAuthCookie(res, user.id);
-    return res.status(201).json({ message: 'User registered successfully', user });
+    setAuthCookie(res, user);
+    const { tokenVersion: _, ...userSafe } = user;
+    return res.status(201).json({ message: 'User registered successfully', user: userSafe });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Something went wrong' });
@@ -79,8 +80,8 @@ router.post('/signin', async (req, res) => {
     const isValid = user.password !== null && (await bcrypt.compare(password, user.password));
     if (!isValid) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const { password: _, googleId: __, ...userSafe } = user;
-    setAuthCookie(res, user.id);
+    const { password: _, googleId: __, tokenVersion: ___, ...userSafe } = user;
+    setAuthCookie(res, user);
     return res.json({ message: 'Signin successful', user: userSafe });
   } catch (err) {
     console.error(err);
@@ -99,7 +100,15 @@ router.get('/me', requireAuth, async (req: AuthedRequest, res) => {
   }
 });
 
-router.post('/logout', (req, res) => {
+// Signs out everywhere: bumping tokenVersion invalidates every cookie issued so far,
+// including one that was copied off this device.
+router.post('/logout', async (req, res) => {
+  try {
+    const userId = await verifySession(readCookie(req.headers.cookie, AUTH_COOKIE));
+    if (userId) await prisma.user.update({ where: { id: userId }, data: { tokenVersion: { increment: 1 } } });
+  } catch (err) {
+    console.error(err);
+  }
   clearAuthCookie(res);
   res.json({ message: 'Signed out' });
 });

@@ -18,6 +18,8 @@ model user {
   // Null for accounts created through Google sign-in.
   password  String?
   googleId  String?  @unique
+  // Bumped to revoke every session at once (logout, Google taking over the email).
+  tokenVersion Int   @default(0)
   createdAt DateTime @default(now())
   calls     call[]
 }

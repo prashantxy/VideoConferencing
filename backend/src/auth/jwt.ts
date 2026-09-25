@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
+import { prisma } from '../prisma';
 
 // The session JWT lives in an httpOnly cookie, so page scripts can never read it.
 // Sockets can't reuse that cookie (they connect to the backend's own domain), so
@@ -13,22 +14,37 @@ type Purpose = 'session' | 'socket';
 interface TokenPayload {
   userId: string;
   purpose: Purpose;
+  // Session tokens only: must equal user.tokenVersion, so bumping it revokes them.
+  v?: number;
 }
 
-function sign(userId: string, purpose: Purpose, expiresIn: string): string {
-  return jwt.sign({ userId, purpose } satisfies TokenPayload, config.jwtSecret, { expiresIn } as jwt.SignOptions);
+function sign(payload: TokenPayload, expiresIn: string): string {
+  return jwt.sign(payload, config.jwtSecret, { expiresIn, algorithm: 'HS256' } as jwt.SignOptions);
 }
 
-export const signSocketTicket = (userId: string) => sign(userId, 'socket', '60s');
+export const signSocketTicket = (userId: string) => sign({ userId, purpose: 'socket' }, '60s');
 
-/** Returns the user id if the token is valid and was issued for `purpose`. */
-export function verifyToken(token: string, purpose: Purpose): string | null {
+function decode(token: string, purpose: Purpose): TokenPayload | null {
   try {
-    const payload = jwt.verify(token, config.jwtSecret) as TokenPayload;
-    return payload.purpose === purpose ? payload.userId ?? null : null;
+    const payload = jwt.verify(token, config.jwtSecret, { algorithms: ['HS256'] }) as TokenPayload;
+    return payload.purpose === purpose && payload.userId ? payload : null;
   } catch {
     return null;
   }
+}
+
+/** Returns the user id if the token is valid and was issued for `purpose`. */
+export function verifyToken(token: string, purpose: Purpose): string | null {
+  return decode(token, purpose)?.userId ?? null;
+}
+
+/** Validates a session cookie against the user's current tokenVersion. */
+export async function verifySession(token: string | null): Promise<string | null> {
+  const payload = token ? decode(token, 'session') : null;
+  if (!payload) return null;
+  const user = await prisma.user.findUnique({ where: { id: payload.userId }, select: { tokenVersion: true } });
+  // Cookies issued before versioning carry no `v`; they count as version 0.
+  return user && user.tokenVersion === (payload.v ?? 0) ? payload.userId : null;
 }
 
 export function readCookie(header: string | undefined, name: string): string | null {
@@ -39,8 +55,8 @@ export function readCookie(header: string | undefined, name: string): string | n
   return null;
 }
 
-export function setAuthCookie(res: Response, userId: string) {
-  res.cookie(AUTH_COOKIE, sign(userId, 'session', config.jwtExpiresIn), {
+export function setAuthCookie(res: Response, user: { id: string; tokenVersion: number }) {
+  res.cookie(AUTH_COOKIE, sign({ userId: user.id, purpose: 'session', v: user.tokenVersion }, config.jwtExpiresIn), {
     httpOnly: true,
     secure: config.cookieSecure,
     sameSite: 'lax',
@@ -57,12 +73,16 @@ export interface AuthedRequest extends Request {
   userId?: string;
 }
 
-export function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
-  const token = readCookie(req.headers.cookie, AUTH_COOKIE);
-  const userId = token ? verifyToken(token, 'session') : null;
-  if (!userId) {
-    return res.status(401).json({ error: 'Unauthorized' });
+export async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
+  try {
+    const userId = await verifySession(readCookie(req.headers.cookie, AUTH_COOKIE));
+    if (!userId) {
+      clearAuthCookie(res);
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    req.userId = userId;
+    next();
+  } catch (err) {
+    next(err);
   }
-  req.userId = userId;
-  next();
 }

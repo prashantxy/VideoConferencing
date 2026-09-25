@@ -110,9 +110,22 @@ router.get('/callback', async (req, res) => {
     let user = await prisma.user.findUnique({ where: { googleId: profile.sub } });
     if (!user) {
       const byEmail = await prisma.user.findUnique({ where: { email } });
+      if (byEmail?.googleId) {
+        return backToFrontend(res, { error: 'This email is already linked to a different Google account' });
+      }
       user = byEmail
-        // Google has verified this address, so link it to the existing account.
-        ? await prisma.user.update({ where: { id: byEmail.id }, data: { googleId: profile.sub } })
+        // Sign-up never verified this address, but Google just did. Whoever set the
+        // existing password may not own the inbox, so drop it and revoke their sessions;
+        // the real owner can keep using Google (or set a new password later).
+        ? await prisma.user.update({
+            where: { id: byEmail.id },
+            data: {
+              googleId: profile.sub,
+              password: null,
+              tokenVersion: { increment: 1 },
+              name: (profile.name ?? byEmail.name).slice(0, 50),
+            },
+          })
         : await prisma.user.create({
             data: {
               googleId: profile.sub,
@@ -123,7 +136,7 @@ router.get('/callback', async (req, res) => {
           });
     }
 
-    setAuthCookie(res, user.id);
+    setAuthCookie(res, user);
     return backToFrontend(res, { signedin: '1' });
   } catch (err) {
     console.error(err);
