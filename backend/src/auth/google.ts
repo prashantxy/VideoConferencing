@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { prisma } from '../prisma';
 import { config } from '../config';
 import { readCookie, setAuthCookie } from './jwt';
+import { googleLimit } from './rateLimits';
 
 // Authorization-code flow: /auth/google sends the browser to Google, Google
 // sends it back to /auth/google/callback, and we set the session cookie.
@@ -49,7 +50,7 @@ async function uniqueUsername(email: string): Promise<string> {
   return `${base}${crypto.randomBytes(3).toString('hex')}`;
 }
 
-router.get('/', (req, res) => {
+router.get('/', googleLimit, (req, res) => {
   if (!configured()) return res.status(503).json({ error: 'Google sign-in is not configured' });
 
   const state = crypto.randomBytes(16).toString('hex');

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import { z } from 'zod';
 import { prisma } from '../prisma';
+import { signinAccountLimit, signinIpLimit, signupLimit } from './rateLimits';
 import { AUTH_COOKIE, AuthedRequest, clearAuthCookie, readCookie, requireAuth, setAuthCookie, signSocketTicket, verifySession } from './jwt';
 
 const router = Router();
@@ -9,7 +10,7 @@ const router = Router();
 const signupSchema = z.object({
   name: z.string().trim().min(2, "Name must be at least 2 characters long").max(50),
   email: z.string().trim().toLowerCase().email("Invalid email format"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters").max(128),
   username: z
     .string()
     .trim()
@@ -20,13 +21,14 @@ const signupSchema = z.object({
 
 // `username` may also be an email address.
 const signinSchema = z.object({
-  username: z.string().trim().min(3, "Username must be at least 3 characters"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  username: z.string().trim().min(3, "Username must be at least 3 characters").max(254),
+  // Older accounts may have 6-7 character passwords, so sign-in only needs one.
+  password: z.string().min(1, "Password is required").max(128),
 });
 
 const publicUser = { id: true, name: true, email: true, username: true, createdAt: true } as const;
 
-router.post('/signup', async (req, res) => {
+router.post('/signup', signupLimit, async (req, res) => {
   try {
     const parsedData = signupSchema.safeParse(req.body);
     if (!parsedData.success) {
@@ -61,7 +63,7 @@ router.post('/signup', async (req, res) => {
   }
 });
 
-router.post('/signin', async (req, res) => {
+router.post('/signin', signinIpLimit, signinAccountLimit, async (req, res) => {
   try {
     const parsedData = signinSchema.safeParse(req.body);
     if (!parsedData.success) {

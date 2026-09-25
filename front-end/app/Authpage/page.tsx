@@ -233,8 +233,9 @@ function AuthForm() {
                 onChange={onChange}
                 autoComplete={signup ? 'new-password' : 'current-password'}
                 required
-                minLength={6}
-                placeholder={signup ? 'At least 6 characters' : 'Required'}
+                minLength={signup ? 8 : undefined}
+                maxLength={128}
+                placeholder={signup ? 'At least 8 characters' : 'Required'}
                 aria-invalid={!!error || undefined}
                 aria-describedby={error ? 'auth-error' : undefined}
                 trailing={
