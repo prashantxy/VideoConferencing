@@ -2,7 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import { z } from 'zod';
 import { prisma } from '../prisma';
-import { AuthedRequest, requireAuth, signToken } from './jwt';
+import { AuthedRequest, clearAuthCookie, requireAuth, setAuthCookie, signSocketTicket } from './jwt';
 
 const router = Router();
 
@@ -52,7 +52,8 @@ router.post('/signup', async (req, res) => {
       select: publicUser,
     });
 
-    return res.status(201).json({ message: 'User registered successfully', token: signToken(user.id), user });
+    setAuthCookie(res, user.id);
+    return res.status(201).json({ message: 'User registered successfully', user });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Something went wrong' });
@@ -79,7 +80,8 @@ router.post('/signin', async (req, res) => {
     if (!isValid) return res.status(401).json({ error: 'Invalid credentials' });
 
     const { password: _, googleId: __, ...userSafe } = user;
-    return res.json({ message: 'Signin successful', token: signToken(user.id), user: userSafe });
+    setAuthCookie(res, user.id);
+    return res.json({ message: 'Signin successful', user: userSafe });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Something went wrong' });
@@ -95,6 +97,16 @@ router.get('/me', requireAuth, async (req: AuthedRequest, res) => {
     console.error(err);
     res.status(500).json({ error: 'Something went wrong' });
   }
+});
+
+router.post('/logout', (req, res) => {
+  clearAuthCookie(res);
+  res.json({ message: 'Signed out' });
+});
+
+// Short-lived token the Room page hands to the Socket.IO handshake.
+router.get('/socket-ticket', requireAuth, (req: AuthedRequest, res) => {
+  res.json({ ticket: signSocketTicket(req.userId!) });
 });
 
 export default router;

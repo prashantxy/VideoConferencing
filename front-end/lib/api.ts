@@ -3,7 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-export const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000').replace(/\/$/, '');
+// Proxied to the backend by next.config.ts so the session cookie is first-party.
+export const API_URL = '/api';
+// Socket.IO connects to the backend directly (the /api proxy can't carry websockets).
+export const SOCKET_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000').replace(/\/$/, '');
 
 export interface User {
   id: string;
@@ -19,7 +22,6 @@ export interface ChatPrefs {
   hasVideo: boolean;
 }
 
-const TOKEN_KEY = 'token';
 const USER_KEY = 'user';
 const CHAT_KEY = 'chatData';
 
@@ -32,15 +34,14 @@ function readJSON<T>(key: string): T | null {
   }
 }
 
+// The auth token itself is an httpOnly cookie that scripts can't see. We only
+// cache the public profile, to render instantly and as a "probably signed in" hint.
 export const session = {
-  token: () => (typeof window === 'undefined' ? null : localStorage.getItem(TOKEN_KEY)),
   user: () => (typeof window === 'undefined' ? null : readJSON<User>(USER_KEY)),
-  save(token: string, user: User) {
-    localStorage.setItem(TOKEN_KEY, token);
+  save(user: User) {
     localStorage.setItem(USER_KEY, JSON.stringify(user));
   },
   clear() {
-    localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     localStorage.removeItem(CHAT_KEY);
   },
@@ -55,14 +56,9 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = session.token();
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init.headers,
-    },
+    headers: { 'Content-Type': 'application/json', ...init.headers },
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -82,7 +78,7 @@ export function useSession() {
 
   useEffect(() => {
     const cached = session.user();
-    if (!session.token() || !cached) {
+    if (!cached) {
       router.replace('/Authpage');
       return;
     }
@@ -90,7 +86,7 @@ export function useSession() {
 
     api<{ user: User }>('/auth/me')
       .then(({ user }) => {
-        session.save(session.token()!, user);
+        session.save(user);
         setUser(user);
       })
       .catch((err) => {
@@ -101,7 +97,8 @@ export function useSession() {
       });
   }, [router]);
 
-  const logout = () => {
+  const logout = async () => {
+    await api('/auth/logout', { method: 'POST' }).catch(() => {});
     session.clear();
     router.replace('/');
   };

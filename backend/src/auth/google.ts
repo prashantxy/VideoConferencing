@@ -2,11 +2,12 @@ import { Router, Response } from 'express';
 import crypto from 'crypto';
 import { prisma } from '../prisma';
 import { config } from '../config';
-import { signToken } from './jwt';
+import { readCookie, setAuthCookie } from './jwt';
 
 // Authorization-code flow: /auth/google sends the browser to Google, Google
-// sends it back to /auth/google/callback, and we hand our own JWT to the
-// front-end in the URL fragment (never sent to any server).
+// sends it back to /auth/google/callback, and we set the session cookie.
+// Both routes are reached through the front-end's /api proxy, so the cookies
+// belong to the front-end's domain.
 
 const router = Router();
 
@@ -25,16 +26,8 @@ interface GoogleProfile {
 const configured = () => Boolean(config.google.clientId && config.google.clientSecret);
 
 function backToFrontend(res: Response, params: Record<string, string>) {
-  res.clearCookie(STATE_COOKIE, { path: '/auth/google' });
+  res.clearCookie(STATE_COOKIE, { path: '/' });
   res.redirect(`${config.frontendUrl}/Authpage#${new URLSearchParams(params)}`);
-}
-
-function readCookie(header: string | undefined, name: string): string | null {
-  for (const part of (header ?? '').split(';')) {
-    const [k, ...v] = part.trim().split('=');
-    if (k === name) return decodeURIComponent(v.join('='));
-  }
-  return null;
 }
 
 /** Derives a unique username from the email's local part, e.g. ada_l, ada_l1, ... */
@@ -53,10 +46,11 @@ router.get('/', (req, res) => {
   const state = crypto.randomBytes(16).toString('hex');
   res.cookie(STATE_COOKIE, state, {
     httpOnly: true,
-    secure: config.google.redirectUri.startsWith('https://'),
+    secure: config.cookieSecure,
     sameSite: 'lax',
     maxAge: 10 * 60 * 1000,
-    path: '/auth/google',
+    // Browser sees /api/auth/google, backend sees /auth/google, so scope to root.
+    path: '/',
   });
 
   const params = new URLSearchParams({
@@ -119,7 +113,8 @@ router.get('/callback', async (req, res) => {
           });
     }
 
-    return backToFrontend(res, { token: signToken(user.id) });
+    setAuthCookie(res, user.id);
+    return backToFrontend(res, { signedin: '1' });
   } catch (err) {
     console.error(err);
     return backToFrontend(res, { error: 'Google sign-in failed, please try again' });

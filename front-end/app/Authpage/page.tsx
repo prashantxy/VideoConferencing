@@ -97,31 +97,30 @@ function AuthForm() {
   );
 
   useEffect(() => {
-    // Returning from Google: the backend puts our token (or an error) in the fragment.
+    // Returning from Google: the backend has set the session cookie (or put an error in the fragment).
     const hash = new URLSearchParams(window.location.hash.slice(1));
-    const token = hash.get('token');
+    const fromGoogle = hash.has('signedin');
     const oauthError = hash.get('error');
-    if (token || oauthError) window.history.replaceState(null, '', window.location.pathname + window.location.search);
-
-    if (token) {
-      setLoading(true);
-      fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
-        .then((r) => (r.ok ? r.json() : Promise.reject()))
-        .then(({ user }: { user: User }) => {
-          session.save(token, user);
-          router.replace('/Dashboard');
-        })
-        .catch(() => {
-          setError('Google sign-in failed, please try again');
-          setLoading(false);
-        });
-      return;
-    }
+    if (fromGoogle || oauthError) window.history.replaceState(null, '', window.location.pathname + window.location.search);
     if (oauthError) {
       setError(oauthError);
       return;
     }
-    if (session.token() && session.user()) router.replace('/Dashboard');
+
+    // Skip the form when the cookie is already a valid session.
+    if (fromGoogle) setLoading(true);
+    api<{ user: User }>('/auth/me')
+      .then(({ user }) => {
+        session.save(user);
+        router.replace('/Dashboard');
+      })
+      .catch(() => {
+        session.clear();
+        if (fromGoogle) {
+          setError('Google sign-in failed, please try again');
+          setLoading(false);
+        }
+      });
   }, [router]);
 
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -141,11 +140,11 @@ function AuthForm() {
     setError('');
     try {
       const body = mode === 'signin' ? { username: form.username, password: form.password } : form;
-      const { token, user } = await api<{ token: string; user: User }>(`/auth/${mode}`, {
+      const { user } = await api<{ user: User }>(`/auth/${mode}`, {
         method: 'POST',
         body: JSON.stringify(body),
       });
-      session.save(token, user);
+      session.save(user);
       router.push('/Dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');

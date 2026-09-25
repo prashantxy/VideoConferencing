@@ -50,10 +50,10 @@ app.get('/stats', (req, res) => {
 
 const broadcastOnline = () => io.emit("online-count", userManager.getStatus().online);
 
-// Only signed-in users may join the matchmaking pool.
+// Only signed-in users may join the matchmaking pool (ticket from /auth/socket-ticket).
 io.use((socket, next) => {
-  const token = socket.handshake.auth?.token;
-  const userId = typeof token === 'string' ? verifyToken(token) : null;
+  const ticket = socket.handshake.auth?.ticket;
+  const userId = typeof ticket === 'string' ? verifyToken(ticket, 'socket') : null;
   if (!userId) return next(new Error('unauthorized'));
   socket.data.userId = userId;
   next();

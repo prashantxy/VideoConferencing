@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { Avatar, Button, OnlinePill } from "@/components/ui";
 import { Insets, SelfView } from "@/components/SelfView";
-import { API_URL, session, useOnlineCount } from "@/lib/api";
+import { SOCKET_URL, api, session, useOnlineCount } from "@/lib/api";
 import { mediaErrorText, useLocalMedia } from "@/lib/media";
 
 type Phase = "connecting" | "searching" | "matched" | "stopped";
@@ -79,7 +79,7 @@ export default function RoomPage() {
 
   // No session or no lobby prefs → go through the dashboard first.
   useEffect(() => {
-    if (!session.token()) router.replace("/Authpage");
+    if (!session.user()) router.replace("/Authpage");
     else if (!prefs) router.replace("/Dashboard");
   }, [prefs, router]);
 
@@ -114,8 +114,7 @@ export default function RoomPage() {
   // Signaling: one socket and at most one peer connection at a time.
   useEffect(() => {
     const stream = media.stream;
-    const token = session.token();
-    if (!stream || !token || !prefs) return;
+    if (!stream || !prefs) return;
 
     const closePeer = () => {
       pcRef.current?.close();
@@ -156,7 +155,15 @@ export default function RoomPage() {
       for (const c of queued) await pc.addIceCandidate(c).catch(() => {});
     };
 
-    const socket = io(API_URL, { auth: { token }, transports: ["websocket"] });
+    // A fresh 60s ticket for every (re)connect attempt; the session cookie never leaves the front-end's domain.
+    const socket = io(SOCKET_URL, {
+      auth: (cb) => {
+        api<{ ticket: string }>("/auth/socket-ticket")
+          .then(({ ticket }) => cb({ ticket }))
+          .catch(() => cb({}));
+      },
+      transports: ["websocket"],
+    });
     socketRef.current = socket;
 
     socket.on("connect", () => {

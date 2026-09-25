@@ -139,7 +139,10 @@ body {
   transform: scale(0.96);
 }
 
-:focus-visible {
+/* Keyboard ring for buttons and links. Text fields are skipped: the caret already
+   shows focus, and this unlayered rule would beat Tailwind's layered focus:outline-none.
+   [tabindex="-1"] covers elements focused from script, like the auth error message. */
+:focus-visible:not(input, textarea, select, [tabindex="-1"]) {
   outline: 2px solid var(--label);
   outline-offset: 2px;
 }

@@ -223,7 +223,7 @@ export default function HomePage() {
   );
 
   useEffect(() => {
-    if (session.token() && session.user()) router.replace('/Dashboard');
+    if (session.user()) router.replace('/Dashboard');
   }, [router]);
 
   return (
