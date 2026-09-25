@@ -35,7 +35,11 @@ const googleProfile = z.object({
 
 const configured = () => Boolean(config.google.clientId && config.google.clientSecret);
 
-function backToFrontend(res: Response, params: Record<string, string>) {
+// Errors travel as codes; the Authpage maps them to text, so a crafted
+// #error=... link can't put arbitrary words on our page.
+type GoogleError = 'cancelled' | 'expired' | 'unverified' | 'linked_elsewhere' | 'failed';
+
+function backToFrontend(res: Response, params: { signedin: '1' } | { error: GoogleError }) {
   res.clearCookie(STATE_COOKIE, { path: '/' });
   res.redirect(`${config.frontendUrl}/Authpage#${new URLSearchParams(params)}`);
 }
@@ -76,11 +80,11 @@ router.get('/', googleLimit, (req, res) => {
 
 router.get('/callback', async (req, res) => {
   const query = callbackQuery.safeParse(req.query);
-  if (query.success && 'error' in query.data) return backToFrontend(res, { error: 'Google sign-in was cancelled' });
+  if (query.success && 'error' in query.data) return backToFrontend(res, { error: 'cancelled' });
 
   const expected = readCookie(req.headers.cookie, STATE_COOKIE);
   if (!query.success || !('code' in query.data) || !expected || query.data.state !== expected) {
-    return backToFrontend(res, { error: 'Google sign-in expired, please try again' });
+    return backToFrontend(res, { error: 'expired' });
   }
   const { code } = query.data;
 
@@ -104,7 +108,7 @@ router.get('/callback', async (req, res) => {
     const profile = googleProfile.parse(await profileRes.json());
 
     if (!profile.email || !profile.email_verified) {
-      return backToFrontend(res, { error: 'Your Google account has no verified email' });
+      return backToFrontend(res, { error: 'unverified' });
     }
     const email = profile.email.toLowerCase();
 
@@ -112,7 +116,7 @@ router.get('/callback', async (req, res) => {
     if (!user) {
       const byEmail = await prisma.user.findUnique({ where: { email } });
       if (byEmail?.googleId) {
-        return backToFrontend(res, { error: 'This email is already linked to a different Google account' });
+        return backToFrontend(res, { error: 'linked_elsewhere' });
       }
       user = byEmail
         // Sign-up never verified this address, but Google just did. Whoever set the
@@ -141,7 +145,7 @@ router.get('/callback', async (req, res) => {
     return backToFrontend(res, { signedin: '1' });
   } catch (err) {
     console.error(err);
-    return backToFrontend(res, { error: 'Google sign-in failed, please try again' });
+    return backToFrontend(res, { error: 'failed' });
   }
 });
 

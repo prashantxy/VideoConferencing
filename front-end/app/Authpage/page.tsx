@@ -41,6 +41,16 @@ function SegmentedControl({ value, onChange }: { value: Mode; onChange: (m: Mode
   );
 }
 
+// Codes the backend's Google callback may put in #error=. Anything else gets the
+// generic message, so a crafted link can't show its own text on this page.
+const googleErrors: Record<string, string> = {
+  cancelled: 'Google sign-in was cancelled.',
+  expired: 'Google sign-in expired, please try again.',
+  unverified: 'Your Google account has no verified email.',
+  linked_elsewhere: 'This email is already linked to a different Google account.',
+  failed: 'Google sign-in failed, please try again.',
+};
+
 function GoogleIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 48 48" className="h-[18px] w-[18px]">
@@ -103,7 +113,7 @@ function AuthForm() {
     const oauthError = hash.get('error');
     if (fromGoogle || oauthError) window.history.replaceState(null, '', window.location.pathname + window.location.search);
     if (oauthError) {
-      setError(oauthError);
+      setError(Object.hasOwn(googleErrors, oauthError) ? googleErrors[oauthError] : googleErrors.failed);
       return;
     }
 
