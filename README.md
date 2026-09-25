@@ -17,9 +17,9 @@ only does auth, matchmaking and signaling.
 # backend (port 3000)
 cd backend
 cp .env.example .env        # set DATABASE_URL and JWT_SECRET
-pnpm install
-pnpm db:migrate
-pnpm dev
+npm install
+npm run db:migrate
+npm run dev
 
 # front-end (port 3001)
 cd front-end
