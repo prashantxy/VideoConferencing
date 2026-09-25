@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { Video } from 'lucide-react';
+import { Heart, Video } from 'lucide-react';
 
 export function AppIcon({ size = 32 }: { size?: number }) {
   return (
@@ -153,5 +153,25 @@ export function IconTile({ icon: Icon, className = '' }: { icon: React.ElementTy
     >
       <Icon className="h-5 w-5" strokeWidth={1.75} />
     </span>
+  );
+}
+
+// Donation page (Buy Me a Coffee, Ko-fi, GitHub Sponsors, ...). Nothing renders when unset.
+export const SUPPORT_URL = process.env.NEXT_PUBLIC_SUPPORT_URL || '';
+
+/** Opens the donation page in a new tab; hidden when NEXT_PUBLIC_SUPPORT_URL is unset. */
+export function SupportButton({ className = '' }: { className?: string }) {
+  if (!SUPPORT_URL) return null;
+  return (
+    <a
+      href={SUPPORT_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Support VideoMeet"
+      className={`pressable inline-flex h-9 items-center gap-1.5 rounded-full bg-fill px-3 text-[15px] font-semibold text-label hover:bg-fill-hover sm:px-4 ${className}`}
+    >
+      <Heart className="h-4 w-4 text-red" fill="currentColor" />
+      <span className="hidden sm:inline">Support</span>
+    </a>
   );
 }

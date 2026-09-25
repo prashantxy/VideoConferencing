@@ -4,7 +4,7 @@ import React, { useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ChevronRight, Lock, MessageCircle, Mic, PhoneOff, Shuffle, Video, VideoOff } from 'lucide-react';
-import { Avatar, Button, IconTile, Logo, NavBar, OnlinePill, SectionHeader } from '@/components/ui';
+import { Avatar, Button, IconTile, Logo, NavBar, OnlinePill, SectionHeader, SUPPORT_URL } from '@/components/ui';
 import { session, useOnlineCount } from '@/lib/api';
 import { gsap, MOTION_OK, MOTION_REDUCED, revealAll, ScrollTrigger, SplitText, useGSAP, whenIntroDone } from '@/lib/gsap';
 import { ChatterWall } from '@/components/ChatterWall';
@@ -414,6 +414,12 @@ export default function HomePage() {
               <Link href="/Dashboard" className="text-label-2 hover:text-label">Dashboard</Link>
               <Link href="/Room" className="text-label-2 hover:text-label">Start a call</Link>
             </div>
+            {SUPPORT_URL && (
+              <div className="flex flex-col gap-2.5">
+                <p className="font-semibold text-label">Project</p>
+                <a href={SUPPORT_URL} target="_blank" rel="noopener noreferrer" className="text-label-2 hover:text-label">Support VideoMeet</a>
+              </div>
+            )}
           </nav>
         </div>
         <div className="mx-auto max-w-[1120px] border-t border-separator px-5 py-5 text-[12px] text-label-3">

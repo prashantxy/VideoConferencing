@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Clock, Mic, MicOff, RefreshCw, Trophy, Users, Video, VideoOff } from 'lucide-react';
-import { Avatar, Button, Group, IconTile, NavBar, OnlinePill } from '@/components/ui';
+import { Avatar, Button, Group, IconTile, NavBar, OnlinePill, SupportButton } from '@/components/ui';
 import { api, formatDuration, session, useOnlineCount, useSession } from '@/lib/api';
 import { mediaErrorText, useLocalMedia } from '@/lib/media';
 import { PageLoader } from '@/components/Loader';
@@ -121,6 +121,7 @@ export default function Dashboard() {
           <Avatar name={user.name} size={28} />
           <span className="text-[15px] font-medium">{user.name}</span>
         </span>
+        <SupportButton />
         <Button size="sm" variant="gray" onClick={logout}>Sign out</Button>
       </NavBar>
 
