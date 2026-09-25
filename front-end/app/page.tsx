@@ -242,9 +242,10 @@ export default function HomePage() {
             <p data-reveal className="hero-eyebrow">
               <CityClock index={cityIndex} />
             </p>
-            <h1 data-reveal className="hero-title large-title mx-auto mt-7 max-w-5xl text-[clamp(3rem,13vw,6.5rem)] leading-[1.02] sm:text-[clamp(3rem,9vw,6.5rem)]">
+            <h1 data-reveal className="hero-title large-title mx-auto mt-7 text-[clamp(3rem,13vw,6.5rem)] leading-[1.02] sm:text-[clamp(3rem,8.25vw,6.25rem)]">
               <span className="hero-line block">Say hello to</span>
-              <span className="block">
+              {/* Never wraps from sm up; the font size above keeps "someone in Mexico City." (~10.5em) inside the page width. */}
+              <span className="block sm:whitespace-nowrap">
                 <span className="hero-line">someone in</span>{' '}
                 {/* On phones the city gets its own line so long names still fit. */}
                 <span className="block sm:inline">
