@@ -13,6 +13,12 @@ import usersRouter from './routes/users';
 const app = express();
 // See auth/rateLimits.ts: req.ip should be the client, not Vercel's proxy.
 app.set('trust proxy', true);
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  next();
+});
 const server = http.createServer(app);
 
 const io = new Server(server, {
