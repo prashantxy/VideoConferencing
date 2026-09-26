@@ -156,12 +156,11 @@ export function IconTile({ icon: Icon, className = '' }: { icon: React.ElementTy
   );
 }
 
-// Donation page (Buy Me a Coffee, Ko-fi, GitHub Sponsors, ...). Nothing renders when unset.
-export const SUPPORT_URL = process.env.NEXT_PUBLIC_SUPPORT_URL || '';
+// Donation page; NEXT_PUBLIC_SUPPORT_URL overrides it.
+export const SUPPORT_URL = process.env.NEXT_PUBLIC_SUPPORT_URL || 'https://buymeacoffee.com/moralizer_19';
 
-/** Opens the donation page in a new tab; hidden when NEXT_PUBLIC_SUPPORT_URL is unset. */
+/** Opens the donation page in a new tab. */
 export function SupportButton({ className = '' }: { className?: string }) {
-  if (!SUPPORT_URL) return null;
   return (
     <a
       href={SUPPORT_URL}

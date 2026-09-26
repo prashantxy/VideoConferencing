@@ -415,12 +415,10 @@ export default function HomePage() {
               <Link href="/Dashboard" className="text-label-2 hover:text-label">Dashboard</Link>
               <Link href="/Room" className="text-label-2 hover:text-label">Start a call</Link>
             </div>
-            {SUPPORT_URL && (
-              <div className="flex flex-col gap-2.5">
-                <p className="font-semibold text-label">Project</p>
-                <a href={SUPPORT_URL} target="_blank" rel="noopener noreferrer" className="text-label-2 hover:text-label">Support VibeCall</a>
-              </div>
-            )}
+            <div className="flex flex-col gap-2.5">
+              <p className="font-semibold text-label">Project</p>
+              <a href={SUPPORT_URL} target="_blank" rel="noopener noreferrer" className="text-label-2 hover:text-label">Support VibeCall</a>
+            </div>
           </nav>
         </div>
         <div className="mx-auto max-w-[1120px] border-t border-separator px-5 py-5 text-[12px] text-label-3">
