@@ -4,7 +4,7 @@ import React, { useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ChevronRight, Lock, MessageCircle, Mic, PhoneOff, Shuffle, Video, VideoOff } from 'lucide-react';
-import { Avatar, Button, IconTile, Logo, NavBar, OnlinePill, SectionHeader, SUPPORT_URL } from '@/components/ui';
+import { Avatar, Button, IconTile, Logo, NavBar, OnlinePill, SectionHeader, SocialLinks, SUPPORT_URL } from '@/components/ui';
 import { session, useOnlineCount } from '@/lib/api';
 import { gsap, MOTION_OK, MOTION_REDUCED, revealAll, ScrollTrigger, SplitText, useGSAP, whenIntroDone } from '@/lib/gsap';
 import { ChatterWall } from '@/components/ChatterWall';
@@ -230,6 +230,7 @@ export default function HomePage() {
     <div ref={root} className="min-h-dvh overflow-x-clip">
       <div className="wallpaper" />
       <NavBar>
+        <SocialLinks />
         <OnlinePill count={online} className="hidden sm:inline-flex" />
         <Button size="sm" variant="gray" onClick={() => router.push('/Authpage')}>Sign in</Button>
       </NavBar>
